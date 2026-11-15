@@ -1414,7 +1414,7 @@ function esc(s) {
     var steps = qs.map(function(q, i){
       var next = q.el.nextElementSibling;
       var list = q.el.classList.contains("rich-p") && next && next.classList.contains("rich-list") && next.textContent.indexOf("?") < 0 ? next : null;
-      return { hasList: !!list, q: q.text, d: draft[i] || (draft[i] = { sel: "", other: "" }), opts: qaOptions(q.text, list) };
+      return { hasList: !!list, q: q.text, d: draft[i] || (draft[i] = { sel: "", other: "", on: false }), opts: qaOptions(q.text, list) };
     });
     var boxes = steps;
     steps.forEach(function(st, i){
@@ -1426,11 +1426,18 @@ function esc(s) {
         b.type = "button"; b.className = "qa-opt" + (d.sel === o ? " on" : ""); b.textContent = o;
         b.setAttribute("aria-pressed", String(d.sel === o));
         b.onclick = function(){
-          d.sel = d.sel === o ? "" : o;
+          d.sel = d.sel === o ? "" : o; autoTick();
           row.querySelectorAll(".qa-opt").forEach(function(x){ x.classList.toggle("on", x.textContent === d.sel); x.setAttribute("aria-pressed", String(x.textContent === d.sel)); });
         };
         row.appendChild(b);
       });
+      var tick = document.createElement("label"); tick.className = "qa-tick";
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!d.on;
+      cb.onchange = function(){ d.on = cb.checked; };
+      tick.appendChild(cb); tick.appendChild(document.createTextNode(ui(" Aplicar esta decisão", " Apply this decision")));
+      wiz.appendChild(tick);
+      // escolher ou escrever uma resposta marca-a sozinha; o visto continua desmarcável
+      var autoTick = function(){ if (!d.on && (d.sel || d.other.trim())) { d.on = cb.checked = true; } };
       if (st.opts.length) wiz.appendChild(row);
       var inp = document.createElement("input");
       inp.type = "text"; inp.className = "qa-other"; inp.value = d.other;
@@ -1438,7 +1445,7 @@ function esc(s) {
       inp.setAttribute("aria-label", st.q);
       row.setAttribute("role", "group");
       row.setAttribute("aria-label", st.q);
-      inp.oninput = function(){ d.other = inp.value; };
+      inp.oninput = function(){ d.other = inp.value; autoTick(); };
       wiz.appendChild(inp);
       var anchor = qs[i].el, nx = anchor.nextElementSibling;
       if (st.hasList) anchor = nx;
@@ -1453,10 +1460,10 @@ function esc(s) {
     apply.onclick = function(){
       var lines = [];
       boxes.forEach(function(b, i){
-        var a = [b.d.sel, b.d.other.trim()].filter(Boolean).join(" — ");
+        var a = b.d.on ? [b.d.sel, b.d.other.trim()].filter(Boolean).join(" — ") : "";
         if (a) lines.push((i + 1) + ". " + b.q + "\n   → " + a);
       });
-      if (!lines.length) { notifyUser("Maestro", ui("Responde a pelo menos uma pergunta.", "Answer at least one question.")); return; }
+      if (!lines.length) { notifyUser("Maestro", ui("Marca e responde a pelo menos uma decisão.", "Tick and answer at least one decision.")); return; }
       var chat = state.currentChat; if (!chat || apply.disabled) return;
       apply.disabled = true; apply.textContent = ui("A enviar…", "Sending…");
       var config = selectedModelConfig();
