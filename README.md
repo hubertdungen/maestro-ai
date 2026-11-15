@@ -8,7 +8,7 @@
 
 ## What it does
 
-- **Engine routing and fallback.** Classifies a request by domain and size, picks the engine, and falls back by quota (e.g. Antigravity → Codex → Claude → DeepSeek).
+- **Engine routing and fallback.** Classifies a request by domain and size, picks the engine, and falls back by quota (e.g. Codex → Antigravity → Claude → DeepSeek).
 - **Multi-agent workflows.** Complex requests become a JSON plan (scout → specialist → review), executed as a DAG with parallel read-only tasks. Plans and results are persisted and resumable.
 - **Quota budgets.** Weekly quotas are split into daily budgets; DeepSeek has a per-cycle money budget with yellow/red lines for justified extra use.
 - **Read-only scouts.** A restricted DeepSeek API mode that can only list folders, read excerpts and grep inside the project.

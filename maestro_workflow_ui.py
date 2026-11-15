@@ -153,7 +153,7 @@ JS = r"""
     nodes.forEach(function(n){if(n.status==='running')running++;else if(n.status==='done'||n.status==='completed')done++;else if(['pending','queued','waiting'].indexOf(n.status)!==-1)waiting++;});
     var titles={};nodes.forEach(function(n){titles[n.id]=n.title || n.id;});
     var coord=typeof wf.coordinator==='object'?(wf.coordinator.label || wf.coordinator.name || wf.coordinator.engine || ''):wf.coordinator;
-    return '<section class="wf-panel" aria-label="'+ui('Coordenação de agentes','Agent coordination')+'"><div class="wf-head"><strong>'+ui('Plano de trabalho','Work plan')+'</strong><span class="wf-count">'+nodes.length+' '+(nodes.length===1?ui('tarefa','task'):ui('tarefas','tasks'))+' · '+running+' '+ui('a executar','running')+' · '+waiting+' '+ui('a aguardar','waiting')+' · '+done+' '+ui('concluídas','done')+'</span></div>'+
+    return '<section class="wf-panel" data-wf-turn="'+wfText(turnId || wf.turn_id || '')+'" aria-label="'+ui('Coordenação de agentes','Agent coordination')+'"><div class="wf-head"><strong>'+ui('Plano de trabalho','Work plan')+'</strong><span class="wf-count">'+nodes.length+' '+(nodes.length===1?ui('tarefa','task'):ui('tarefas','tasks'))+' · '+running+' '+ui('a executar','running')+' · '+waiting+' '+ui('a aguardar','waiting')+' · '+done+' '+ui('concluídas','done')+'</span></div>'+
       (wf.reason?'<p class="wf-reason">'+wfText(wf.reason)+'</p>':'')+
       (coord?'<p class="wf-coordinator">'+ui('Coordenação: ','Coordinator: ')+wfText(coord)+'</p>':'')+
       '<ol class="wf-nodes">'+nodes.map(function(n){

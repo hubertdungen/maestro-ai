@@ -8,7 +8,7 @@
 
 ## O que faz
 
-- **Encaminhamento e substituição de motores.** Classifica o pedido por domínio e dimensão, escolhe o motor e substitui-o por quota (ex.: Antigravity → Codex → Claude → DeepSeek).
+- **Encaminhamento e substituição de motores.** Classifica o pedido por domínio e dimensão, escolhe o motor e substitui-o por quota (ex.: Codex → Antigravity → Claude → DeepSeek).
 - **Fluxos multiagente.** Pedidos complexos tornam-se um plano JSON (scout → especialista → revisão), executado como DAG com tarefas de leitura em paralelo. Planos e resultados ficam guardados e podem ser retomados.
 - **Orçamentos de quota.** As quotas semanais dividem-se em orçamentos diários; o DeepSeek tem um orçamento em euros por ciclo, com *yellowline* e *redline* para uso extra justificado.
 - **Scouts só de leitura.** Modo restrito da API DeepSeek que apenas lista pastas, lê excertos e pesquisa texto dentro do projeto.
