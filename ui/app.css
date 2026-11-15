@@ -2313,6 +2313,7 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .jump-up-btn .jump-badge { color: #f472b6; text-shadow: 0 0 12px rgba(244,114,182,.55); }
 
 .qa-wiz{display:block;padding:12px 14px;margin:10px 0 6px;border-color:var(--cyan)}
+.qa-tick{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.85;margin-bottom:8px;cursor:pointer}.qa-tick input{width:16px;height:16px;accent-color:var(--cyan);cursor:pointer}
 .qa-wiz-head{font-size:11px;opacity:.6;margin-bottom:4px}
 .qa-wiz-q{font-weight:600;margin-bottom:10px}
 .qa-wiz-opts{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
