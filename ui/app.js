@@ -1989,23 +1989,43 @@ function esc(s) {
     btn.classList.toggle("show", box.__follow === false && distanceToBottom(box) > 8);
   }
 
-  /* Formulários Apply e perguntas em texto partilham a navegação. */
-  function pendingQaTurn() {
+  /* Navigate every actionable request, including Apply proposals and NAS approvals. */
+  function pendingAttentionTargets() {
     var box = chatScrollBox();
-    if (!box) return null;
-    var turns = Array.from(box.querySelectorAll(".qa-apply:not(:disabled)"), function (el) {
-      return el.closest(".turn") || el;
+    if (!box || (state.currentChat || {}).archived) return [];
+    var targets = Array.from(box.querySelectorAll(
+      '.turn.assistant:not(.live-turn) .apply-implementation:not(:disabled), ' +
+      '.turn.assistant:not(.live-turn) [data-code-action]:not(:disabled)'
+    )).filter(function(el) {
+      var status = el.dataset.actionState;
+      return !el.hidden && el.getClientRects().length &&
+        (!status || ['pending', 'failed', 'expired'].indexOf(status) !== -1);
     });
-    if (box.__pendingQuestionTurn && box.contains(box.__pendingQuestionTurn)) turns.push(box.__pendingQuestionTurn);
+    var question = box.__pendingQuestionTurn;
+    if (question && box.contains(question) && question.getClientRects().length &&
+        !question.querySelector('.qa-apply:disabled') &&
+        !targets.some(function(el) { return question.contains(el); })) targets.push(question);
+    return targets;
+  }
+  function pendingAttentionTarget() {
+    var box = chatScrollBox(), targets = pendingAttentionTargets();
+    if (!box || !targets.length) return null;
     var top = box.getBoundingClientRect().top + 40;
-    return turns.filter(function (turn) { return turn.getBoundingClientRect().bottom < top; })
-      .sort(function (a, b) { return b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom; })[0] || null;
+    // Visit the closest pending control above before others still in view/below.
+    var above = targets.filter(function(el) { return el.getBoundingClientRect().top < top; });
+    return above.length ? above[above.length - 1] : targets[0];
   }
   function updateJumpUpBtn() {
-    var box = chatScrollBox(), up = document.getElementById("btnJumpUp");
-    if (!box || !up) return;
-    var t = pendingQaTurn();
-    up.classList.toggle("show", !!t && t.getBoundingClientRect().bottom < box.getBoundingClientRect().top + 40);
+    var up = document.getElementById('btnJumpUp');
+    if (!up) return;
+    var targets = pendingAttentionTargets();
+    up.classList.toggle('show', targets.length > 0);
+    up.tabIndex = targets.length ? 0 : -1;
+    var label = ui('Requer a tua atenção', 'Needs your attention') + ' (' + targets.length + ')';
+    up.title = label;
+    up.setAttribute('aria-label', label);
+    var count = up.querySelector('.attention-count');
+    if (count) count.textContent = targets.length;
   }
 
   function stickToBottom(force) {
@@ -2025,7 +2045,14 @@ function esc(s) {
     var fr = form.getBoundingClientRect();
     if (!pr.width || !fr.width) return;
     /* Alinha a borda direita do FAB com a borda direita da coluna de chat. */
-    btn.style.setProperty("--fab-right", Math.max(10, Math.round(pr.right - fr.right)) + "px");
+    var right = Math.max(10, Math.round(pr.right - fr.right));
+    var strategy = document.querySelector('#stPanel:not(.closed)');
+    if (strategy && strategy.getClientRects().length) {
+      var sr = strategy.getBoundingClientRect();
+      right = Math.max(right, Math.round(pr.right - sr.left + 12));
+    }
+    right = Math.min(right, Math.max(10, pr.width - 56));
+    btn.style.setProperty("--fab-right", right + "px");
     btn.style.bottom = Math.round(pr.bottom - fr.top + 20) + "px";
     var up = document.getElementById("btnJumpUp");
     if (up) { up.style.setProperty("--fab-right", btn.style.getPropertyValue("--fab-right")); up.style.bottom = btn.style.bottom; }
@@ -2205,10 +2232,15 @@ function esc(s) {
     box.addEventListener("scroll", onChatScroll, { passive: true });
     var upBtn = document.getElementById("btnJumpUp");
     if (upBtn) upBtn.addEventListener("click", function(){
-      var t = pendingQaTurn();
-      if (t) { setChatFollow(false); t.scrollIntoView({ behavior: "smooth", block: "start" }); }
+      var t = pendingAttentionTarget();
+      if (t) {
+        setChatFollow(false);
+        t.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+        if (!t.matches('button, input, textarea')) t = t.querySelector('button:not(:disabled), input, textarea') || t;
+        if (t.focus) t.focus({ preventScroll: true });
+      }
     });
-    new MutationObserver(function(){ updateJumpUpBtn(); }).observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
+    new MutationObserver(function(){ updateJumpUpBtn(); }).observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "hidden", "data-action-state"] });
     box.addEventListener("pendingquestionschange", updateJumpUpBtn);
     /* O composer muda de altura (textarea, fila, anexos): o FAB acompanha. */
     var dockEl = document.querySelector("#paneChat #composerForm");
@@ -2216,6 +2248,7 @@ function esc(s) {
       new ResizeObserver(function(){ placeJumpEndBtn(); }).observe(dockEl);
     }
     window.addEventListener("resize", placeJumpEndBtn);
+    window.addEventListener("strategyvisibilitychange", placeJumpEndBtn);
     /* Gesto para cima desliga o seguimento ANTES de o scroll suavizar; assim
        nenhum poll de 950 ms volta a puxar o chat para baixo no meio da leitura. */
     box.addEventListener("wheel", function(e){
@@ -6043,6 +6076,7 @@ function esc(s) {
     var insp = document.getElementById('inspectorRight'), ir = insp ? insp.getBoundingClientRect() : null;
     panel.style.right = ((ir && ir.width > 8) ? window.innerWidth - ir.left + 10 : 10) + 'px';
     var open = isOpen(); panel.classList.toggle('closed', !open);
+    window.dispatchEvent(new Event('strategyvisibilitychange'));
     var m = open ? current() : null;
     if (m && m.turn === 'live') m.turn = '';
     var s = open ? JSON.stringify([m, thinkNext]) + panel.style.right : 'x';

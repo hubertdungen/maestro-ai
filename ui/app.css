@@ -2304,8 +2304,12 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .pq-item { text-align: left; border: 0; background: transparent; color: var(--text); padding: 5px 6px; border-radius: 8px; font: 13px/1.35 inherit; cursor: pointer; }
 .pq-item:hover { background: var(--card-hover); }
 
-/* Seta «para cima»: há perguntas por responder acima da posição de leitura. */
+/* Pending decisions stay visible until handled, including Apply and approvals. */
 .jump-up-btn { margin-bottom: 52px; border-color: rgba(244,114,182,.55); }
+.jump-up-btn.show { border-color: #f472b6; animation: attention-glow 2.4s ease-in-out infinite; }
+.jump-up-btn .attention-count { position: absolute; right: -5px; top: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 10px; background: #f472b6; color: #190b16; font: 700 11px/18px system-ui, sans-serif; box-shadow: 0 2px 8px #0008; }
+@keyframes attention-glow { 50% { box-shadow: 0 0 0 4px rgba(244,114,182,.13), 0 0 24px rgba(244,114,182,.4); } }
+@media (prefers-reduced-motion: reduce) { .jump-up-btn.show { animation: none; } }
 .jump-up-btn .jump-badge { color: #f472b6; text-shadow: 0 0 12px rgba(244,114,182,.55); }
 
 .qa-wiz{display:block;padding:12px 14px;margin:10px 0 6px;border-color:var(--cyan)}
