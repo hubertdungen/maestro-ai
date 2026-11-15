@@ -2078,7 +2078,7 @@ html[data-world="cyberpunk"] { --control-duration: 180ms; --control-glow: 27%; }
 html[data-world="hesperia"] { --control-duration: 320ms; --control-glow: 12%; }
 html[data-world="dune"] { --control-duration: 360ms; --control-glow: 14%; }
 html[data-world="dungen"] { --control-duration: 280ms; --control-glow: 10%; }
-:is(button, a.ico-only, a.exe-download-btn) {
+:is(button, a[href], summary, [role="button"], select, input[type="checkbox"], input[type="radio"]) {
   transition: background-color var(--control-duration) var(--control-ease), border-color var(--control-duration) var(--control-ease), color var(--control-duration) var(--control-ease), box-shadow var(--control-duration) var(--control-ease), filter var(--control-duration) var(--control-ease), transform var(--control-duration) var(--control-ease);
 }
 :is(button, a.ico-only, a.exe-download-btn):focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
@@ -2356,3 +2356,61 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 #stPanel.closed .st-main{display:none}#stPanel.closed{width:0;top:70px;bottom:auto}#stPanel.closed .st-toggle{left:-40px}
 @media (max-width:1080px){#stPanel{display:none}}
 @media (prefers-reduced-motion:reduce){.st-edge.flow,.st-node[data-status=running],.st-think.pulse{animation:none}}
+
+/* Shared interaction motion. Individual transforms preserve positioning and
+   existing icon/menu animations. Keep transitions on the resting state so
+   pointer exit and release ease back too, including controls created later. */
+:is(button, a[href], summary, [role="button"], select, input[type="checkbox"], input[type="radio"]) {
+  --interaction-accent: var(--cyan);
+  transition: translate var(--control-duration) cubic-bezier(.22,1,.36,1),
+    scale var(--control-duration) cubic-bezier(.22,1,.36,1),
+    transform var(--control-duration) var(--control-ease),
+    background-color var(--control-duration) var(--control-ease),
+    border-color var(--control-duration) var(--control-ease),
+    color var(--control-duration) var(--control-ease),
+    box-shadow var(--control-duration) var(--control-ease),
+    filter var(--control-duration) var(--control-ease);
+  -webkit-tap-highlight-color: transparent;
+}
+#btnStopJob { --interaction-accent: #f87171; }
+:is(button, a[href], summary, [role="button"], select):focus-visible {
+  outline: 2px solid var(--interaction-accent);
+  outline-offset: 3px;
+}
+:is(button, a[href], summary, [role="button"]) .svg-ico {
+  transition: transform var(--control-duration) var(--control-ease),
+    filter var(--control-duration) var(--control-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  :is(button, a[href], summary, [role="button"], select):not(:disabled):not([aria-disabled="true"]):hover {
+    translate: 0 -2px;
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--interaction-accent) var(--control-glow), transparent),
+      inset 0 0 12px color-mix(in srgb, var(--interaction-accent) 8%, transparent);
+  }
+  #btnStopJob:not(:disabled):hover {
+    box-shadow: 0 0 0 3px #f871711a, 0 4px 20px #f8717140;
+  }
+  #btnStopJob:not(:disabled):hover .svg-ico { transform: scale(1.14); }
+}
+:is(button, a[href], summary, [role="button"], select):not(:disabled):not([aria-disabled="true"]):active {
+  translate: 0 1px;
+  scale: .96;
+  transition-duration: 90ms;
+}
+/* Disabled controls have no motion feedback, even when the pointer stays put. */
+:is(button, select):disabled, [aria-disabled="true"],
+:is(button, select):disabled:is(:hover, :active), [aria-disabled="true"]:is(:hover, :active) {
+  transform: none;
+  translate: none;
+  scale: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(button, a[href], summary, [role="button"], select, input[type="checkbox"], input[type="radio"]),
+  :is(button, a[href], summary, [role="button"]) * {
+    animation: none !important;
+    transition: none !important;
+    translate: none !important;
+    scale: none !important;
+  }
+  :is(button, a[href], summary, [role="button"]):is(:hover, :active) .svg-ico { transform: none !important; }
+}
