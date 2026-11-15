@@ -2365,6 +2365,8 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .st-events{margin:0;padding:0;list-style:none;display:grid;gap:3px}.st-events time{color:var(--muted,#94a3b8);font-variant-numeric:tabular-nums;margin-right:4px}.st-empty{color:var(--muted,#94a3b8)}
 #stPanel.closed .st-main{display:none}#stPanel.closed{width:0;top:70px;bottom:auto}#stPanel.closed .st-toggle{left:-40px}
 @media (min-width:1081px){body.st-open #paneChat{padding-right:var(--st-w,360px)}}
+/* painel fechado: reserva a faixa do 🧭 para não ficar sobre o scroller */
+@media (min-width:1081px){body:not(.st-open) #paneChat{padding-right:52px}}
 @media (max-width:1080px){#stPanel{display:none}}
 @media (prefers-reduced-motion:reduce){.st-edge.flow,.st-node[data-status=running],.st-think.pulse{animation:none}}
 

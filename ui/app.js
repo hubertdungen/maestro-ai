@@ -2124,9 +2124,11 @@ function esc(s) {
       var _sc = document.getElementById("chatScroll");
       if (_sc) {
         _sc.__follow = true;
+        _sc.__restoring = true; /* até restoreScrollFor correr, nada mais mexe no scroll */
         _sc.style.visibility = "hidden"; /* sem salto visível do topo para o fim */
-        setTimeout(function () { restoreScrollFor(c && c.id); }, 30);
-        setTimeout(function () { _sc.style.visibility = ""; }, 600);
+        clearTimeout(_sc.__restoreT); clearTimeout(_sc.__unhideT);
+        _sc.__restoreT = setTimeout(function () { restoreScrollFor(c && c.id); }, 30);
+        _sc.__unhideT = setTimeout(function () { _sc.style.visibility = ""; }, 600);
       }
     }
 
@@ -2280,7 +2282,9 @@ function esc(s) {
       _liveEl = null;
     }
 
-    if (wasNearBottom) {
+    if (box.__restoring) {
+      /* troca de chat: restoreScrollFor posiciona uma só vez */
+    } else if (wasNearBottom) {
       box.__follow = true;
       scrollChatToBottom(false);
     } else {
@@ -3204,7 +3208,9 @@ function esc(s) {
     var box = document.getElementById("chatScroll");
     if (!box) return;
     var v = chatId ? scrollStore()[chatId] : null;
+    if (state.renderedChatId !== chatId) return; /* já se trocou outra vez */
     window.requestAnimationFrame(function () {
+      box.__restoring = false;
       if (v && typeof v.top === "number") {
         box.__follow = false;
         var maxTop = Math.max(0, box.scrollHeight - box.clientHeight);
@@ -3220,7 +3226,7 @@ function esc(s) {
   (function(){
     var b = document.getElementById("chatScroll");
     if (b) b.addEventListener("load", function(e){
-      if (e.target && e.target.tagName === "IMG" && b.__follow !== false && !composerHasFocus()) { b.scrollTop = b.scrollHeight; }
+      if (e.target && e.target.tagName === "IMG" && b.__follow !== false && !b.__restoring && !composerHasFocus()) { b.scrollTop = b.scrollHeight; }
     }, true);
   })();
   /* Altura real da janela (o 100dvh falha em PWAs Android e esconde o compositor). */
