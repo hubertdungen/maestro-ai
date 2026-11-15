@@ -519,9 +519,7 @@ html[data-world="dungen"] .bubble { border-radius: 3px; }
 #chatScroll[data-style="code"] .turn.assistant .bubble {
   background: rgba(4, 9, 16, 0.94); border-left: 2px solid var(--cyan); border-radius: 4px;
 }
-#chatScroll[data-style="code"] .turn.user .bubble {
-  background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 4px;
-}
+#chatScroll[data-style="code"] .turn.user .bubble { border-radius: 4px; }
 #chatScroll[data-style="code"] pre, #chatScroll[data-style="code"] code { font-size: 0.77rem; }
 #chatScroll[data-style="code"] .bubble p { margin: 4px 0; }
 #chatScroll[data-style="code"] .bubble { max-width: min(100%, 980px); }
