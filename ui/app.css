@@ -2451,3 +2451,8 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .mt-facts span { display: flex; align-items: center; gap: 6px; border-radius: 9px; padding: 4px 7px; transition: background .15s, transform .15s; }
 .mt-facts span:hover { background: rgba(56,189,248,.1); transform: translateY(-1px); }
 .mt-more summary::before { margin-right: 4px; }
+
+/* Functional roles, distinct from model/provider badges. */
+.role-tag{display:inline-flex;align-items:center;vertical-align:middle;white-space:nowrap;font:600 .66rem/1.4 var(--font-mono,monospace);letter-spacing:.03em;border:1px solid currentColor;border-radius:6px;padding:1px 6px;color:#a5b4fc;background:color-mix(in srgb,currentColor 9%,transparent)}
+.role-maestro{color:#f0c978}.role-planner,.role-analysis{color:#c4b5fd}.role-sentinel{color:#67e8f9}.role-scout{color:#93c5fd}.role-implementation{color:#86efac}.role-review{color:#fda4af}.role-synthesis{color:#d8b4fe}
+.mt-roles{margin:12px 0;font-size:.75rem}.mt-roles>summary{cursor:pointer;color:var(--muted);padding:8px 0}.mt-role-grid{display:grid;gap:9px;padding:8px 0}.mt-role-grid>div{display:flex;align-items:flex-start;gap:9px}.mt-role-grid .role-tag{flex-shrink:0}.mt-roles p{color:var(--muted);line-height:1.5}

@@ -77,3 +77,19 @@ Ao atingir qualquer teto, a fila escolhe uma alternativa compatível ou espera c
 A única exceção automática local (`essential_reserve`) exige uma intervenção urgente explícita sobre um incidente crítico (perda/corrupção de dados ou indisponibilidade de produção), classificação avançada e ausência de outro fornecedor compatível com quota normal. O motivo fica na admissão visível. É uma heurística conservadora, não uma avaliação universal de qualidade. O limite real do fornecedor continua obrigatório. Trocar entre modelos Codex não cria orçamento novo.
 
 O controlo aplica-se antes de iniciar cada chamada; uma chamada em curso termina para preservar escritas. Leituras do fornecedor têm cache até 90s e resolução percentual: este mecanismo não garante um corte exato por token. O hot reload aguarda os turnos ativos terminarem.
+
+
+## Funções estáveis e tags
+
+As funções não são nomes de modelos nem sessões adicionais. `Maestro` coordena;
+`Architect` identifica a fase de planeamento do coordenador; `Sentinel` faz a triagem
+da fila; `Scout` investiga; `Analyst` analisa; `Maker` implementa; `Auditor` revê;
+`Scribe` sintetiza. A árvore mostra a função real de cada nó ao lado do motor.
+
+Sentinel tenta Haiku (timeout de 20 segundos), depois DeepSeek Flash pelo adaptador
+API com o orçamento partilhado. Só aceita as respostas exatas `PARALELO` e `ESPERAR`.
+Uma decisão válida de esperar não provoca nova tentativa noutro motor. Se ambos
+falharem, a fila espera localmente e volta a tentar noutra passagem; erros não ficam
+em cache. A cache inclui o texto para invalidar decisões após editar um pedido.
+O catálogo de funções está em «Funções e tags» na Tabela do Maestro. Os títulos de
+conversas continuam a ter a sua alternativa local existente.

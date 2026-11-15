@@ -331,3 +331,52 @@ class TriageTests(unittest.TestCase):
         t = dict(id='c', text='uma frase bem comprida sobre outra coisa qualquer')
         self.assertFalse(Q.triage_independent(t, [dict(id='r', text='x')], '/nonexistent'))
         self.assertNotIn(('c', ('r',)), Q._TRIAGE_CACHE)
+
+
+class SentinelFallbackTests(unittest.TestCase):
+    def setUp(self):
+        Q._TRIAGE_CACHE.clear()
+        self.task = dict(id='sentinel-test', text='Analisa os registos completos do outro projeto Lectoria')
+        self.others = [dict(id='running', text='Corrige os estilos do Maestro')]
+
+    def run_triage(self, raw='', code=1, fallback=None):
+        from types import SimpleNamespace
+        with patch('subprocess.run', return_value=SimpleNamespace(returncode=code, stdout=raw)):
+            return Q.triage_independent(self.task, self.others, 'claude', fallback)
+
+    def test_haiku_outage_uses_independent_provider(self):
+        from unittest.mock import Mock
+        backup = Mock(return_value='PARALELO')
+        self.assertTrue(self.run_triage(fallback=backup))
+        backup.assert_called_once()
+        self.assertEqual(self.task['triage']['engine'], 'deepseek')
+
+    def test_wait_is_a_valid_decision_not_an_outage(self):
+        from unittest.mock import Mock
+        backup = Mock(return_value='PARALELO')
+        self.assertFalse(self.run_triage('ESPERAR', 0, backup))
+        backup.assert_not_called()
+
+    def test_invalid_or_negated_reply_cannot_admit_task(self):
+        for text in ('NÃO PARALELO', 'ESPERAR ou PARALELO', '', 'quota unavailable'):
+            Q._TRIAGE_CACHE.clear()
+            self.assertFalse(self.run_triage(text, 0, lambda p: 'invalid'))
+            self.assertFalse(Q._TRIAGE_CACHE)
+
+    def test_both_providers_fail_then_retry_recovers(self):
+        def fail(prompt):
+            raise RuntimeError('unavailable')
+        self.assertFalse(self.run_triage(fallback=fail))
+        self.assertFalse(Q._TRIAGE_CACHE)
+        self.assertTrue(self.run_triage(fallback=lambda p: 'PARALELO'))
+
+    def test_text_edits_invalidate_cached_decision(self):
+        self.assertTrue(self.run_triage('PARALELO', 0))
+        self.task['text'] = 'Corrige também os estilos do mesmo projeto Maestro'
+        self.assertFalse(self.run_triage('ESPERAR', 0))
+
+    def test_server_fallback_uses_budgeted_adapter(self):
+        import maestro_web as W
+        with patch.object(W.M, '_extract_deepseek_key', return_value='fake'), patch.object(W.READONLY, '_request', return_value={'choices':[{'message':{'content':'PARALELO'}}]}) as req:
+            self.assertEqual(W._sentinel_fallback('triage prompt'), 'PARALELO')
+        self.assertEqual(req.call_args.args[3]['max_tokens'], 16)

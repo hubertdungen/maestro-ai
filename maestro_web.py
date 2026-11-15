@@ -1797,7 +1797,7 @@ def chat_subtasks(chat):
             result[(turn_id, node['id'])] = dict(turn_id=turn_id, node_id=node['id'],
                 title=node['title'], status=node['status'], engine=node.get('actual_agent') or node['engine'],
                 model=node.get('model_id') or (node.get('result') or {}).get('model_id') or '',
-                deps=node.get('depends_on') or [])
+                deps=node.get('depends_on') or [], role=node.get('role'))
     return list(result.values())
 
 
@@ -1837,11 +1837,24 @@ def workflow_subchat(chat_id, turn_id, node_id, text=None, request_id=None):
                                node['status'] in ('pending', 'running') and not chat.get('archived')))
 
 
+def _sentinel_fallback(prompt):
+    """Independent provider; existing API adapter enforces the shared spending budget."""
+    key = M._extract_deepseek_key()
+    if not key:
+        raise RuntimeError('Sentinel: DeepSeek unavailable')
+    data = READONLY._request('POST', '/chat/completions', key, {
+        'model': 'deepseek-flash', 'temperature': 0, 'max_tokens': 16,
+        'thinking': {'type': 'disabled'},
+        'messages': [{'role': 'user', 'content': prompt}],
+    })
+    return data['choices'][0]['message']['content']
+
+
 def _llm_independent(task, others):
     claude_bin = str(M.NODE_BIN / "claude") if (M.NODE_BIN / "claude").exists() else str(M.NPM_BIN / "claude")
     with TURN_QUEUE.lock:
         running_tasks = [dict(t) for t in TURN_QUEUE.tasks if t['status'] == 'running' and t['id'] != task['id']]
-    return Q.triage_independent(task, running_tasks + [o for o in others if o['id'] != task['id']], claude_bin)
+    return Q.triage_independent(task, running_tasks + [o for o in others if o['id'] != task['id']], claude_bin, _sentinel_fallback)
 
 
 def schedule_turns_once():
