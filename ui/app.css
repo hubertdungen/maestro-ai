@@ -2510,3 +2510,5 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 #stPanel .st-req span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px}
 .st-linked{outline:1px solid var(--line-strong,#38bdf8aa);outline-offset:3px;border-radius:12px;transition:outline-color .3s}
 @media (prefers-reduced-motion:reduce){#stPanel.st-switching{transition:none}#stPanel .st-body.st-swap{animation:none}}
+
+#stPanel.st-away .st-main{display:none}
