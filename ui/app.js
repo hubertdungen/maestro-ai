@@ -3,6 +3,25 @@ window.maestroRoleTag = function(role){
   var names = {maestro:'Maestro',planner:'Architect',analysis:'Analyst',sentinel:'Sentinel',scout:'Scout',implementation:'Maker',review:'Auditor',synthesis:'Scribe'};
   return names[role] ? '<span class="role-tag role-' + role + '">' + names[role] + '</span>' : '';
 };
+// Share detection between inline replies and the unanswered-question navigator.
+window.maestroReplyPrompts = function(root) {
+  var out = [], openSection = false;
+  root.querySelectorAll('.rich-h1, .rich-h2, .rich-h3, .rich-h4, .rich-h5, .rich-h6, h1, h2, h3, h4, h5, h6, .rich-p, .rich-list-item, p').forEach(function(el) {
+    if (el.closest('.code-card, .orch-details, .qa-box, pre, table, blockquote')) return;
+    var text = el.textContent.replace(/^\s*[▸•\-\d.]+\s+/, '').trim();
+    if (/^(?:rich-h[1-6])$/.test(el.className) || /^H[1-6]$/.test(el.tagName)) {
+      openSection = /quest(?:ão|ões)\s+(?:em\s+abert[oa]s?|pendentes?)|open\s+questions?|decis(?:ão|ões)\s+pendentes?/i.test(text);
+      return;
+    }
+    if (text.length < 8 || text.length > 1600) return;
+    var decision = /\b(?:tens? de|precisas? de|deves?|necessito que|you (?:need to|must|have to))\s+(?:decidir|escolher|confirmar|indicar|choose|decide|confirm|specify)\b|\b(?:preciso|precisamos) (?:de )?(?:saber|confirmar|que (?:decidas|escolhas|confirmes))\b/i.test(text);
+    if (!/\?/.test(text) && !decision && !(openSection && /\b(?:ou|or)\b/i.test(text))) return;
+    // A rich list item may contain paragraphs; one control per source block.
+    if (out.some(function(q) { return q.el.contains(el); })) return;
+    out.push({el:el, text:text});
+  });
+  return out;
+};
 (function(){
   var state = {
     mod: "chat",
@@ -1329,8 +1348,8 @@ function esc(s) {
     return 'apply-proposal-' + (m.turn_id || String(m.ts || '') + '-' + hash32(m.text));
   }
 
-  function suggestionRequested(m) {
-    var marker = '[' + suggestionKey(m) + ']';
+  function suggestionRequested(m, key) {
+    var marker = '[' + (key || suggestionKey(m)) + ']';
     return ((state.currentChat || {}).messages || []).some(function(msg){ return msg.role === 'user' && String(msg.text || '').indexOf(marker) !== -1; }) ||
       state.messageQueue.some(function(t){ return String(t.text || '').indexOf(marker) !== -1; });
   }
@@ -1371,32 +1390,31 @@ function esc(s) {
       if (t && t.length <= 120) opts.push(t);
     });
     if (opts.length >= 2 && opts.length <= 8) return opts;
-    var t = q.replace(/[?\s*]+$/, "");
+    var t = q.replace(/[.!?\s*]+$/, "");
+    // Keep the alternatives, dropping the explanation and decision preamble.
+    var choice = t.match(/\b(?:decidir|confirmar|decide|confirm)\s+(?:se|whether)\s+[^.!?]*?\b(?:são|é|are|is)\s+([^.!?]+\b(?:ou|or)\b[^.!?]+)$/i) ||
+      t.match(/\b(?:escolher|decidir|choose|decide)\s+(?:entre|between)\s+([^.!?]+\b(?:ou|or)\b[^.!?]+)$/i);
+    if (choice) t = choice[1];
+    var alternativesOnly = t !== q.replace(/[.!?\s*]+$/, "");
     var paren = t.match(/\(([^()]*(?:\/|,|\bou\b|\bor\b)[^()]*)\)\s*$/);
     if (paren) t = paren[1]; else if (t.indexOf(":") > -1) t = t.slice(t.lastIndexOf(":") + 1);
     else if (!/\b(ou|or)\b|\//.test(t)) return [];
     else t = t.replace(/^.*?,\s*(?=[^,]*\b(?:ou|or)\b)/, "");
     var parts = t.split(/\s*(?:\/|,|;|\bou\b|\bor\b)\s*/i).map(function(s){ return s.trim().replace(/^[-–•*]\s*/, ""); }).filter(Boolean);
     if (parts.length < 2 || parts.length > 6) return [];
-    if (!paren && t === q.replace(/[?\s*]+$/, "") && parts[0].split(/\s+/).length > 2) /* tira o «Queres usar» */
+    if (!alternativesOnly && !paren && t === q.replace(/[.!?\s*]+$/, "") && parts[0].split(/\s+/).length > 2) /* tira o «Queres usar» */
       parts[0] = parts[0].replace(/^.*\b(?:usar|use|com|with|por|to|for|ficar com)\s+/i, "").split(/\s+/).slice(-2).join(" ");
     return parts.every(function(s){ return s.length <= 90 && s.split(/\s+/).length <= 14; }) ? parts : [];
   }
 
   function attachReplyBoxes(bubble, m) {
-    var qs = [];
-    bubble.querySelectorAll(".rich-p, .rich-list-item").forEach(function(el){
-      if (el.closest(".code-card, .orch-details, pre, table")) return;
-      var own = el.textContent.replace(/^\s*[▸•\-\d.]+\s+/, "").trim();
-      if (own.length < 8 || own.length > 400 || !/\?[\s*_)"”]*$/.test(own)) return;
-      qs.push({ el: el, text: own });
-    });
+    var qs = window.maestroReplyPrompts(bubble);
     if (!qs.length) return;
-    var key = suggestionKey(m), draft = _qaDraft[key] || (_qaDraft[key] = {});
+    var key = 'qa-' + suggestionKey(m), draft = _qaDraft[key] || (_qaDraft[key] = {});
     var steps = qs.map(function(q, i){
       var next = q.el.nextElementSibling;
       var list = q.el.classList.contains("rich-p") && next && next.classList.contains("rich-list") && next.textContent.indexOf("?") < 0 ? next : null;
-      return { hasList: !!list, q: q.text, d: draft[i] || (draft[i] = { sel: "", other: "" }), opts: qaOptions(q.text, list) };
+      return { hasList: !!list, q: q.text, d: draft[i] || (draft[i] = { sel: "", other: "", on: false }), opts: qaOptions(q.text, list) };
     });
     var boxes = steps;
     steps.forEach(function(st, i){
@@ -1406,17 +1424,28 @@ function esc(s) {
       st.opts.forEach(function(o){
         var b = document.createElement("button");
         b.type = "button"; b.className = "qa-opt" + (d.sel === o ? " on" : ""); b.textContent = o;
+        b.setAttribute("aria-pressed", String(d.sel === o));
         b.onclick = function(){
-          d.sel = d.sel === o ? "" : o;
-          row.querySelectorAll(".qa-opt").forEach(function(x){ x.classList.toggle("on", x.textContent === d.sel); });
+          d.sel = d.sel === o ? "" : o; autoTick();
+          row.querySelectorAll(".qa-opt").forEach(function(x){ x.classList.toggle("on", x.textContent === d.sel); x.setAttribute("aria-pressed", String(x.textContent === d.sel)); });
         };
         row.appendChild(b);
       });
+      var tick = document.createElement("label"); tick.className = "qa-tick";
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!d.on;
+      cb.onchange = function(){ d.on = cb.checked; };
+      tick.appendChild(cb); tick.appendChild(document.createTextNode(ui(" Aplicar esta decisão", " Apply this decision")));
+      wiz.appendChild(tick);
+      // escolher ou escrever uma resposta marca-a sozinha; o visto continua desmarcável
+      var autoTick = function(){ if (!d.on && (d.sel || d.other.trim())) { d.on = cb.checked = true; } };
       if (st.opts.length) wiz.appendChild(row);
       var inp = document.createElement("input");
       inp.type = "text"; inp.className = "qa-other"; inp.value = d.other;
-      inp.placeholder = ui("Outra…", "Other…");
-      inp.oninput = function(){ d.other = inp.value; };
+      inp.placeholder = st.opts.length ? ui("Outra resposta…", "Other answer…") : ui("Escreve a tua resposta…", "Write your answer…");
+      inp.setAttribute("aria-label", st.q);
+      row.setAttribute("role", "group");
+      row.setAttribute("aria-label", st.q);
+      inp.oninput = function(){ d.other = inp.value; autoTick(); };
       wiz.appendChild(inp);
       var anchor = qs[i].el, nx = anchor.nextElementSibling;
       if (st.hasList) anchor = nx;
@@ -1424,16 +1453,17 @@ function esc(s) {
     });
     var apply = document.createElement("button");
     apply.type = "button"; apply.className = "apply-implementation qa-apply";
-    var sent = suggestionRequested(m);
+    var sent = suggestionRequested(m, key);
+    var applyLabel = ui("Enviar respostas", "Send answers");
     apply.disabled = sent;
-    apply.textContent = sent ? ui("Respostas enviadas", "Answers sent") : "Apply";
+    apply.textContent = sent ? ui("Respostas enviadas", "Answers sent") : applyLabel;
     apply.onclick = function(){
       var lines = [];
       boxes.forEach(function(b, i){
-        var a = [b.d.sel, b.d.other.trim()].filter(Boolean).join(" — ");
+        var a = b.d.on ? [b.d.sel, b.d.other.trim()].filter(Boolean).join(" — ") : "";
         if (a) lines.push((i + 1) + ". " + b.q + "\n   → " + a);
       });
-      if (!lines.length) { notifyUser("Maestro", ui("Responde a pelo menos uma pergunta.", "Answer at least one question.")); return; }
+      if (!lines.length) { notifyUser("Maestro", ui("Marca e responde a pelo menos uma decisão.", "Tick and answer at least one decision.")); return; }
       var chat = state.currentChat; if (!chat || apply.disabled) return;
       apply.disabled = true; apply.textContent = ui("A enviar…", "Sending…");
       var config = selectedModelConfig();
@@ -1442,12 +1472,12 @@ function esc(s) {
         model_id:config.model_id, effort:config.effort, text:text, images:[], docs:[], async:true,
         request_id:chat.id + "-" + key}).then(function(res){
           if (!state.currentChat || state.currentChat.id !== chat.id) return;
-          if (!receiveQueue(res)) return;
+          if (!receiveQueue(res)) { apply.textContent = suggestionRequested(m, key) ? ui("Respostas enviadas", "Answers sent") : (apply.disabled = false, applyLabel); return; }
           if (res.chat) state.currentChat = res.chat;
           state.activeJob = res.job || null;
           renderMessages(); syncComposerBusyUI(); startJobPolling(chat.id);
         }).catch(function(){
-          apply.disabled = false; apply.textContent = "Apply";
+          apply.disabled = false; apply.textContent = applyLabel;
           notifyUser("Maestro", ui("Não foi possível enviar. Tenta novamente.", "Could not send. Try again."));
         });
     };
@@ -1516,6 +1546,22 @@ function esc(s) {
       };
       if (m.role === 'user') mkBtn('✎ ' + ui('Editar', 'Edit'), ui('Nova conversa até aqui, com esta mensagem para editar', 'New chat up to here, with this message ready to edit'), 0, true);
       mkBtn('⑂ ' + ui('Bifurcar', 'Fork'), ui('Nova conversa a partir daqui', 'New chat from here'), 1, false);
+      if (m.role === 'assistant' && _cm[_cm.length - 1] === m) {
+        var done = document.createElement('button');
+        done.type = 'button'; done.className = 'mark-done';
+        done.textContent = '✓ ' + ui('Dar como fechado', 'Mark as done');
+        done.title = ui('Arquiva esta conversa como concluída', 'Archive this conversation as finished');
+        done.onclick = function(){
+          var c = state.currentChat; if (!c) return;
+          if (c.activity && c.activity.state === 'running') { alert(ui('Para a execução antes de fechar.', 'Stop the running task first.')); return; }
+          done.disabled = true;
+          api('/api/chat/archive', {id: c.id, archived: true}).then(function(d){
+            if (d.chat) { state.currentChat = d.chat; state.activeJob = null; syncComposerBusyUI(); renderMessages(); }
+            return refreshChats();
+          }).catch(function(){ done.disabled = false; alert(ui('Não foi possível fechar.', 'Could not close.')); });
+        };
+        foot.appendChild(done);
+      }
     }
     turn.appendChild(foot);
     if (hasImplementationSuggestion(m) && !(state.currentChat || {}).archived) {
@@ -2184,10 +2230,16 @@ function esc(s) {
     });
 
     msgs.forEach(function(m, idx){
-      var action = _turnCache[idx] && _turnCache[idx].el.querySelector('.apply-implementation');
+      var el = _turnCache[idx] && _turnCache[idx].el;
+      var action = el && el.querySelector('.apply-implementation:not(.qa-apply)');
       if (action && suggestionRequested(m)) {
         action.disabled = true;
         action.textContent = ui('Implementação pedida', 'Implementation requested');
+      }
+      var qa = el && el.querySelector('.qa-apply');
+      if (qa && suggestionRequested(m, 'qa-' + suggestionKey(m))) {
+        qa.disabled = true;
+        qa.textContent = ui('Respostas enviadas', 'Answers sent');
       }
     });
 
@@ -5373,6 +5425,8 @@ function esc(s) {
     toastTxt.textContent = state.lang === "en"
       ? "New Maestro AI update (#" + v.hash.slice(0,6) + ") detected." + (busyJob ? " It will apply when the current run finishes." : "")
       : "Nova atualização do Maestro AI (#" + v.hash.slice(0,6) + ") detetada." + (busyJob ? " Aplica-se quando a execução atual terminar." : "");
+    var nowBtn = document.getElementById("btnApplyUpdateNow");
+    if (nowBtn && !state.reloading) nowBtn.textContent = state.lang === "en" ? "Update now" : "Atualizar agora";
     toast.hidden = false;
   }
 
@@ -5498,7 +5552,10 @@ function esc(s) {
           // O utilizador já fechou este aviso; não voltar a abri-lo a cada 10s.
           if (state.autoUpdate && !busyTyping && !busyJob && !document.hidden) {
             state.buildHash = v.hash;
-            state.updateTimer = setTimeout(performSeamlessReload, 1500);
+            state.updateTimer = setTimeout(function(){
+              state.updateTimer = null;
+              if (!isBusyNow()) performSeamlessReload(true);
+            }, 1500);
           }
           return;
         }
@@ -5510,7 +5567,9 @@ function esc(s) {
           state.buildHash = v.hash;
           state.updateTimer = setTimeout(function(){
             state.updateTimer = null;
-            performSeamlessReload();
+            // Entretanto pode ter começado uma execução: nesse caso não recarregar
+            // nem perguntar (o diálogo aparecia sozinho de x em x tempo).
+            if (!isBusyNow()) performSeamlessReload(true);
           }, 3000);
         }
       } else {
@@ -5921,17 +5980,9 @@ function esc(s) {
     scroll.dispatchEvent(new Event("pendingquestionschange"));
   }
   function questions(turn) {
-    var c = turn.cloneNode(true);
-    c.querySelectorAll("pre,code,.turn-foot,button").forEach(function (n) { n.remove(); });
-    var out = [];
-    (c.innerText || c.textContent || "").split("\n").forEach(function (line) {
-      (line.match(/[^.!?:;]*?[^\s.!?:;][^.!?]*\?/g) || []).forEach(function (q) {
-        q = q.replace(/^[\s\-*•\d.)»>]+/, "").replace(/[*_`]+/g, "").trim();
-        if (q.length >= 8 && out.indexOf(q) < 0) out.push(q);
-      });
-    });
-    return out.slice(0, 8);
+    return window.maestroReplyPrompts(turn).map(function(q) { return q.text; }).slice(0, 8);
   }
+
   function put(qs) {
     var q = qs.map(function (t, i) { return "> " + (qs.length > 1 ? (i + 1) + ". " : "") + t + "\n\n"; }).join("");
     ta.value = (ta.value ? ta.value.replace(/\s*$/, "\n\n") : "") + q;
@@ -5940,6 +5991,8 @@ function esc(s) {
   }
   function refresh() {
     var turns = scroll.querySelectorAll(".turn"), last = turns[turns.length - 1];
+    var inlineReply = last && last.querySelector('.qa-apply');
+    if (inlineReply) { bar.hidden = true; setPendingTurn(inlineReply.disabled ? null : last); return; }
     var qs = last && last.classList.contains("assistant") && !last.classList.contains("live-turn") ? questions(last) : [];
     var key = qs.join("|");
     if (!qs.length || key === dismissed) { bar.hidden = true; setPendingTurn(null); return; }
@@ -5985,17 +6038,18 @@ function esc(s) {
   function clip(s, n){ s = String(s || '').replace(/\s+/g,' ').trim(); return s.length > n ? s.slice(0, n-1) + '…' : s; }
   function wide(){ return window.innerWidth > 1080; }
 
+  function normStatus(x){ return !x ? 'pending' : x === 'completed' ? 'done' : x; }
   // Modelo único: vem de um workflow completo ou do resumo (c.subtasks) da lista.
   S.fromWorkflow = function(wf, turn){
     var coord = wf.coordinator && typeof wf.coordinator === 'object' ? (wf.coordinator.label || wf.coordinator.name || '') : (wf.coordinator || '');
     return {turn: turn || wf.turn_id || '', coord: coord || ui('Orquestrador','Orchestrator'), reason: localReason(wf.planning_source) ? '' : (wf.reason || ''), source: wf.planning_source || '', created: wf.created_at, status: wf.status,
       nodes: (wf.nodes || []).filter(function(n, i, a){ return a.findIndex(function(x){ return x.id === n.id; }) === i; }).map(function(n){ var r = n.result || {};
-        return {id:n.id, title:n.title || n.id, status:n.status || 'pending', engine:r.agent_used || n.actual_agent || n.engine || '', model:n.model_id || r.model_id || '',
+        return {id:n.id, title:n.title || n.id, status:normStatus(n.status), engine:r.agent_used || n.actual_agent || n.engine || '', model:n.model_id || r.model_id || '',
           role:n.role, deps:n.depends_on || [], note:n.error || n.reason || '', text:typeof r === 'string' ? r : (r.text || ''), started:n.started_at, finished:n.finished_at, guided:(n.guidance || []).length}; })};
   };
   S.fromSubtasks = function(tasks){
     return {turn:'', coord:ui('Orquestrador','Orchestrator'), reason:'', source:'', nodes:(tasks || []).map(function(t){
-      return {id:t.node_id, title:t.title, status:t.status, engine:t.engine, model:t.model, role:t.role, deps:t.deps || [], note:'', text:''}; })};
+      return {id:t.node_id, title:t.title, status:normStatus(t.status), engine:t.engine, model:t.model, role:t.role, deps:t.deps || [], note:'', text:''}; })};
   };
 
   S.summary = function(tasks){
@@ -6020,7 +6074,7 @@ function esc(s) {
         var tag = window.mtag ? window.mtag(n.engine, n.model) : '';
         var decision = clip(n.note || n.text, 150);
         return '<div class="st-node" data-id="' + e(n.id) + '" data-status="' + e(n.status) + '"><span class="st-title"><i>' + (ICO[n.status] || '○') + '</i>' + e(n.title) + '</span>' +
-          '<small>' + window.maestroRoleTag(n.role) + ' ' + e(LBL[n.status] || n.status) + (n.engine ? ' · ' + e(clip(n.engine, 24)) : '') + ' ' + tag + '</small>' +
+          '<small>' + window.maestroRoleTag(n.role) + ' ' + e(LBL[n.status] || n.status) + ' ' + tag + '</small>' +
           (decision ? '<small class="st-decision">' + e(decision) + '</small>' : '') + '</div>';
       }).join('') + '</div>';
     });
@@ -6080,11 +6134,14 @@ function esc(s) {
     var job = st.activeJob;
     if (job && job.status === 'running' && job.workflow && job.chat_id !== (chat.id)) job = null;
     var list = [];
-    (chat.messages || []).forEach(function(msg){ if (msg.plan && msg.plan.workflow && msg.plan.workflow.nodes) list.push([msg.turn_id || msg.plan.workflow.turn_id || '', msg.plan.workflow]); });
-    // The live snapshot replaces the saved snapshot for the same request.
+    // Chave canónica = turn_id; sem ele, posição na lista ('i:N'), igual à que followScroll calcula.
+    (chat.messages || []).forEach(function(msg){ if (msg.plan && msg.plan.workflow && msg.plan.workflow.nodes) {
+      var k = msg.turn_id || msg.plan.workflow.turn_id || ('i:' + list.length);
+      list = list.filter(function(x){ return x[0] !== k; }); list.push([k, msg.plan.workflow]); } });
+    // O snapshot ao vivo substitui o gravado do mesmo pedido (por task_id ou turn_id).
     if (job && job.status === 'running' && job.chat_id === chat.id && job.workflow && job.workflow.nodes) {
       var key = job.task_id || job.workflow.turn_id || 'live';
-      list = list.filter(function(x){ return x[0] !== key; });
+      list = list.filter(function(x){ return x[0] !== key && x[0] !== job.workflow.turn_id; });
       list.push([key, job.workflow, 1]);
     }
     if (!list.length) return null;
@@ -6095,10 +6152,12 @@ function esc(s) {
   function followScroll(){
     var sc = document.getElementById('chatScroll'); if (!sc) return;
     var mid = sc.getBoundingClientRect(); mid = mid.top + mid.height * 0.5; var best = null, bd = 1e9;
+    var i = 0;
     sc.querySelectorAll('.wf-panel, .live-workflow').forEach(function(el){
-      var r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
       if (el.matches('.live-workflow') && !el.children.length) return;
-      if (d < bd){ var b = el.matches('[data-wf-turn]') ? el : el.querySelector('[data-wf-turn]'); bd = d; best = el.matches('.live-workflow') ? 'live' : (b ? b.getAttribute('data-wf-turn') : ''); }
+      var idx = i++, r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
+      if (d < bd){ var b = el.matches('[data-wf-turn]') ? el : el.querySelector('[data-wf-turn]'), t = b && b.getAttribute('data-wf-turn');
+        bd = d; best = t || (el.matches('.live-workflow') ? 'live' : 'i:' + idx); }
     });
     if (best && best !== turn){ turn = best; refresh(); }
   }
