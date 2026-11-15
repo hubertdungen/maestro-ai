@@ -183,7 +183,7 @@ window.addEventListener("error", function (e) {
       <button type="button" class="jump-end-btn" id="btnJumpEnd" title="Ir para o fim da conversa" aria-label="Ir para o fim da conversa">
         <span class="jump-label" data-chat-label="0">⬇ Ir para o fim</span><span class="jump-badge" id="btnJumpEndBadge" aria-hidden="true">↓</span>
       </button>
-      <button type="button" class="jump-end-btn jump-up-btn" id="btnJumpUp" title="Ir para a pergunta por responder" aria-label="Ir para a pergunta por responder"><span class="jump-badge" aria-hidden="true">↑</span></button>
+      <button type="button" class="jump-end-btn jump-up-btn" id="btnJumpUp" title="Requer a tua atenção" aria-label="Requer a tua atenção" tabindex="-1"><span class="jump-badge" aria-hidden="true">↑</span><span class="attention-count" aria-hidden="true"></span></button>
       <footer class="composer-dock">
         <form class="composer-box" id="composerForm">
           <div class="queue-strip" id="queueStrip" hidden></div>
