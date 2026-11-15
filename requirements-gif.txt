@@ -1,0 +1,3 @@
+# Install into .gif-deps (isolated from system packages).
+Pillow==13.0.0
+CairoSVG==2.9.1

@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050912">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Maestro AI">
+<link rel="manifest" href="/manifest.json" crossorigin="use-credentials">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Cinzel:wght@500;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<title>Maestro AI Studio · Pavilion-NAS</title>
+<script>
+/* Rede de segurança: se o JS da app rebentar no arranque (primeiros 10 s), mostra um aviso com «Recarregar»,
+   que funciona mesmo com a app morta. */
+window.addEventListener("error", function (e) {
+  var m = String(e.message || "");
+  if (performance.now() > 10000 || /ResizeObserver|^Script error/.test(m) || document.getElementById("bootfail")) return;
+  var d = document.createElement("div");
+  d.id = "bootfail";
+  d.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fff;padding:10px 14px;font:14px system-ui,sans-serif";
+  d.textContent = "\u26A0 A app falhou ao arrancar (" + m.slice(0, 120) + ") ";
+  var b = document.createElement("button");
+  b.textContent = "Recarregar";
+  b.style.cssText = "margin-left:10px;padding:3px 10px;cursor:pointer";
+  b.onclick = function () { location.reload(); };
+  d.appendChild(b);
+  (document.body || document.documentElement).appendChild(d);
+});
+</script>
+<link rel="stylesheet" href="/ui/app.css">
+</head>
+<body>
+<canvas class="world-bg-canvas" aria-hidden="true"></canvas>
+<div class="world-fx-overlay" aria-hidden="true"></div>
+
+<!-- HOMEPAGE DO MAESTRO · aberta pelo logótipo -->
+<section class="maestro-home" id="maestroHome" hidden role="dialog" aria-modal="true" aria-labelledby="mhTitle">
+  <div class="mh-bg" aria-hidden="true"><span class="mh-planet"></span></div>
+  <div class="mh-shell">
+    <header class="mh-top">
+      <div class="mh-brand">
+        <img src="/icon.svg" alt="">
+      <svg class="svg-ico brand-mono" viewBox="0 0 128 128" aria-hidden="true"><polygon class="d2" points="64,6 116,34 116,94 64,122 12,94 12,34"/><path class="d2" d="M34 88V44l16 22 14-30v18L50 80l-8-12v20zM94 88V44L78 66 64 36v18l14 26 8-12v20z"/><path d="M64 20l6 18-6 60-6-60z"/></svg>
+        <div><b>MAESTRO AI</b><small>Worlds · Studio 3.0</small></div>
+      </div>
+      <button type="button" class="mh-enter" id="btnHomeEnter">Entrar no Studio <span aria-hidden="true">→</span></button>
+    </header>
+
+    <main class="mh-main">
+      <div class="mh-copy">
+        <p class="mh-kicker">Pavilion-NAS · DungenLabs</p>
+        <h1 id="mhTitle">Um estúdio.<br><em>Seis mundos.</em></h1>
+        <p class="mh-lead">O Maestro orquestra os teus agentes, ficheiros e serviços. Cada mundo muda a luz, a tipografia e os efeitos da app inteira — escolhe um e entra.</p>
+        <div class="mh-cta">
+          <button type="button" class="mh-primary" id="btnHomeStart">Entrar no Studio</button>
+          <button type="button" class="mh-ghost" id="btnHomeInstall">📲 Instalar app</button>
+        </div>
+        <p class="mh-hint">Clica num mundo para o experimentar. A escolha fica guardada neste dispositivo.</p>
+      </div>
+      <div class="mh-grid" id="mhWorlds" role="group" aria-label="Mundos visuais"></div>
+    </main>
+
+    <footer class="mh-foot">
+      <span>✨ Fundos, tipografia e efeitos animados por tema</span>
+      <span id="mhActiveWrap">Mundo ativo: <b id="mhActive">—</b></span>
+    </footer>
+  </div>
+</section>
+
+<div class="studio">
+  <div class="mobile-backdrop" id="mobileBackdrop"></div>
+
+  <!-- Puxadores das gavetas: ficam fora da zona do gesto "voltar" do Android
+       e dão um alvo claro para arrastar da esquerda/direita. -->
+  <button type="button" class="edge-grip edge-grip-left" id="edgeGripLeft" aria-label="Abrir menu de conversas" aria-controls="sidebarLeft" aria-expanded="false"><span></span></button>
+  <button type="button" class="edge-grip edge-grip-right" id="edgeGripRight" aria-label="Abrir painel do Maestro" aria-controls="inspectorRight" aria-expanded="false"><span></span></button>
+
+  <!-- COLUNA 1: SIDEBAR ESQUERDA (MÓDULOS + PASTAS COLORIDAS + CONVERSAS) -->
+  <aside class="sidebar-left" id="sidebarLeft" aria-label="Conversas e pastas">
+    <div class="drawer-handle" aria-hidden="true"><span></span></div>
+    <button type="button" class="brand-bar" id="btnBrandHome" data-tip="🏠 Homepage do Maestro|Abre os seis mundos visuais, com fundos e efeitos animados por tema." aria-label="Abrir a homepage do Maestro">
+      <img src="/icon.svg" alt="">
+      <svg class="svg-ico brand-mono" viewBox="0 0 128 128" aria-hidden="true"><polygon class="d2" points="64,6 116,34 116,94 64,122 12,94 12,34"/><path class="d2" d="M34 88V44l16 22 14-30v18L50 80l-8-12v20zM94 88V44L78 66 64 36v18l14 26 8-12v20z"/><path d="M64 20l6 18-6 60-6-60z"/></svg>
+      <span>
+        <span class="brand-title">MAESTRO AI</span>
+        <span class="brand-sub">Studio 3.0 · NAS, Media, 3D &amp; Dev</span>
+      </span>
+    </button>
+
+    <button type="button" class="drawer-update" id="btnRefreshDrawer" aria-label="Verificar e instalar atualização da app">
+      <span class="du-ico" aria-hidden="true">↻</span>
+      <span class="du-text" data-i18n="refresh_app">Atualizar app</span>
+      <span class="du-version" id="drawerVersion">v3.3</span>
+    </button>
+
+    <div class="nav-modules" id="sidebarModNav">
+      <button class="nav-mod-btn ico-only active" data-mod="chat" aria-label="Chat"><span class="ico">💬</span><span>Chat</span></button>
+      <button class="nav-mod-btn ico-only" data-mod="studio" aria-label="Galeria"><span class="ico">🎨</span><span>Galeria</span></button>
+      <button class="nav-mod-btn ico-only" data-mod="media" aria-label="Filmes"><span class="ico">🎬</span><span>Filmes</span></button>
+      <button class="nav-mod-btn ico-only" data-mod="casa" aria-label="Casa/HA"><span class="ico">🏠</span><span>Casa/HA</span></button>
+      <button class="nav-mod-btn ico-only" data-mod="artifacts" aria-label="Artifacts"><span class="ico">🧩</span><span>Artifacts</span></button>
+    </div>
+
+    <button class="new-chat-cta" id="btnNewChat">
+      <span>＋ Nova Conversa</span>
+      <span class="kbd-hint">Ctrl+N</span>
+    </button>
+
+    <div class="sec-label-row">
+      <span>PASTAS & PROJETOS</span>
+      <button type="button" id="btnNewFolder">＋ Pasta</button>
+    </div>
+    <div class="colored-folders" id="folderStrip"></div>
+
+    <div class="search-wrap">
+      <input type="search" class="search-input" id="searchBox" placeholder="Procurar conversas ou pastas…">
+    </div>
+
+    <div class="chat-list" id="chatList"></div>
+    <div class="search-wrap" style="display:flex;gap:6px;flex-wrap:wrap">
+      <button type="button" id="btnArchiveView" class="search-input" style="width:auto">🗃 Arquivo</button>
+      <select id="archiveEngine" class="search-input" style="width:auto;flex:1" aria-label="Filtrar arquivo por motor" hidden>
+        <option value="all">Todos os motores</option><option value="codex">Codex</option>
+        <option value="claude">Claude</option><option value="agy">Antigravity</option>
+        <option value="deepseek">DeepSeek</option><option value="auto">Auto</option>
+      </select>
+    </div>
+
+    <div class="sb-footer">
+      <div class="sb-footer-row">
+        <button type="button" class="ico-only accent" id="btnOpenSettings" aria-label="Opções" data-tip="⚙️ Opções|Idioma, cores, estilo de ícones e instaladores.">⚙️</button>
+        <button type="button" class="ico-only" id="btnCleanup" aria-label="Limpar" data-tip="🧹 Limpar|Fecha processos temporários e limpa recursos órfãos do Maestro.">🧹</button>
+        <a class="ico-only" id="btnNasLink" href="http://pavilion-nas:3000/#terminais" target="_blank" rel="noopener" aria-label="NAS" data-tip="🖥️ NAS|Abre os terminais do Pavilion-NAS num novo separador.">🖥️</a>
+      </div>
+    </div>
+  </aside>
+
+  <!-- COLUNA 2: PALCO CENTRAL (5 MÓDULOS ANIMADOS) -->
+  <main class="center-stage">
+    <header class="studio-header">
+      <button class="icon-pill-btn" id="btnToggleLeft" title="Menu / Pastas">☰</button>
+      <select class="header-select" id="selProject" title="Pasta / Projeto Ativo"></select>
+      <select class="header-select" id="selEngine" hidden title="Agente / Motor">
+        <option value="auto">⚡ Auto (Maestro Orquestra)</option>
+        <option value="agy">🧠 Antigravity (Gemini 4 Argon)</option>
+        <option value="sonnet">🎭 Claude Sonnet (0.2x)</option>
+        <option value="opus">👑 Claude Opus</option>
+        <option value="haiku">Claude Haiku</option>
+        <option value="fable">Claude Fable</option>
+        <option value="codex">⚙️ Codex (gpt-6.1-sol)</option>
+        <option value="deepseek">🔮 DeepSeek V3.2 (API)</option>
+      </select>
+      <div class="header-spacer"></div>
+      <button class="icon-pill-btn" id="btnHeaderSettings" title="Opções, Idioma, Cores & Instaladores">⚙️</button>
+      <button class="icon-pill-btn refresh-btn" id="btnRefreshApp" title="Atualizar app" aria-label="Atualizar app"><span class="refresh-ico" aria-hidden="true">↻</span></button>
+      <button class="icon-pill-btn" id="btnNotif" title="Notificações Nativas">🔔</button>
+      <button class="icon-pill-btn" id="btnToggleRight" title="Painel Studio">📊 <span data-i18n="panel_btn">Painel</span> <span id="headerPulseBadge"></span></button>
+    </header>
+    <div id="pullRefresh" role="status" aria-live="polite">
+      <span class="pr-ico" aria-hidden="true">↓</span>
+      <span class="pr-text" data-i18n="pull_refresh">Puxa para atualizar</span>
+    </div>
+<div class="update-toast anim-in" id="updateToast" role="status" aria-live="polite" hidden>
+  <span class="update-toast-icon" aria-hidden="true">⚡</span>
+  <span class="update-toast-text" id="updateToastText">Nova atualização do Maestro AI pronta!</span>
+  <span class="update-toast-actions">
+    <button type="button" class="card-btn primary" id="btnApplyUpdateNow">Atualizar agora</button>
+    <button type="button" class="update-toast-dismiss" id="btnDismissUpdate" aria-label="Fechar aviso de atualização" title="Fechar aviso">✕</button>
+  </span>
+</div>
+
+    <!-- MÓDULO 1: CHAT & ORQUESTRAÇÃO -->
+    <div class="mod-pane" id="paneChat">
+      <section class="chat-scroll" id="chatScroll"></section>
+      <button type="button" class="jump-end-btn" id="btnJumpEnd" title="Ir para o fim da conversa" aria-label="Ir para o fim da conversa">
+        <span class="jump-label" data-chat-label="0">⬇ Ir para o fim</span><span class="jump-badge" id="btnJumpEndBadge" aria-hidden="true">↓</span>
+      </button>
+      <button type="button" class="jump-end-btn jump-up-btn" id="btnJumpUp" title="Ir para a pergunta por responder" aria-label="Ir para a pergunta por responder"><span class="jump-badge" aria-hidden="true">↑</span></button>
+      <footer class="composer-dock">
+        <form class="composer-box" id="composerForm">
+          <div class="queue-strip" id="queueStrip" hidden></div>
+          <div class="attach-strip" id="attachStrip"></div>
+          <textarea class="composer-textarea" id="promptInput" rows="1" placeholder="Diz ao Maestro o que queres fazer (ex: 'mete o filme Dune a sacar', 'cria script C#', 'estado da Qidi')…"></textarea>
+          <div class="composer-toolbar">
+            <div class="tool-group">
+              <button type="button" class="round-tool-btn composer-more" id="btnComposerMore" aria-label="Mais opções do pedido" aria-haspopup="dialog" aria-expanded="false" aria-controls="composerMenu" data-tip="Mais opções|Ferramentas do pedido, preferências e modelos.">⋯</button>
+              <div class="composer-menu" id="composerMenu" role="dialog" aria-label="Opções do pedido" hidden>
+                <div class="composer-menu-heading" data-chat-label="1">Ferramentas do pedido</div>
+              <input type="file" id="fileInput" accept="image/*" multiple hidden>
+              <button type="button" class="round-tool-btn" id="btnAttach" data-tip="📷 Anexar Imagem|Adiciona imagens/screenshots ao pedido (também funciona com Ctrl+V direto).">📷 Imagem</button>
+              <button type="button" class="round-tool-btn" id="btnVoice" data-tip="🎤 Ditado por Voz|Fala em português (pt-PT) para preencher o pedido mãos-livres.">🎤 Voz</button>
+              <button type="button" class="round-tool-btn magic" id="btnEnhance" data-tip="✨ Melhorar Prompt|Enriquece o teu texto com contexto técnico da pasta/projeto atual.">✨ Melhorar</button>
+                <div class="composer-menu-heading" data-chat-label="2">Preferências e ações</div>
+              <button type="button" class="round-tool-btn" id="btnAutoEnhance" data-tip="Auto-✨ Ao Enviar|Melhora automaticamente pedidos curtos sempre que clicas em Enviar.">Melhorar ao enviar: Não</button>
+              <button type="button" class="round-tool-btn" id="btnChatStyle" data-tip="Aspecto do chat|Auto deteta se a conversa é técnica (terminal/código) ou trivial e adapta a apresentação. Clica para forçar: Auto → ⌘ Código → 📖 Prosa.">⌘ Auto</button>
+              <button type="button" class="round-tool-btn" id="btnAltBusy" hidden data-tip="Ação Alternativa Imediata|Executa a ação oposta ao modo predefinido (Orientar já ou Meter em fila).">🧭 Orientar</button>
+              </div>
+            </div>
+            <div class="composer-primary">
+              <button type="button" class="composer-chip" id="btnComposerEngine" aria-haspopup="dialog" aria-expanded="false" aria-controls="composerEnginePanel">Auto <span aria-hidden="true">⌄</span></button>
+              <button type="button" class="composer-chip" id="btnComposerMode" aria-haspopup="dialog" aria-expanded="false" aria-controls="composerModePanel">Fila <span aria-hidden="true">⌄</span></button>
+              <button type="button" class="composer-quota" id="btnComposerQuota" aria-label="Quotas e tokens" aria-haspopup="dialog" aria-expanded="false" aria-controls="composerQuotaPanel"><span class="quota-orbit" aria-hidden="true"></span></button>
+              <button type="button" class="round-tool-btn" id="btnStopJob" hidden aria-label="Parar tarefa" title="Parar tarefa" style="border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.12);color:#fecaca">■</button>
+              <button type="submit" class="send-circle-btn" id="btnSend" data-tip="Enviar Pedido (Enter)|Envia ao Maestro (ou mete em fila / orienta se já estiver a trabalhar).">Enviar ↗</button>
+            </div>
+          </div>
+        </form>
+      </footer>
+    </div>
+
+    <!-- MÓDULO 2: GERADOR DE IMAGENS & GIFS + GALERIA VISUAL -->
+    <div class="mod-pane" id="paneStudio" hidden>
+      <div class="hub-scroll anim-in">
+        <div class="hub-hero">
+          <div>
+            <h2>🎨 Studio de Imagens AI, GIFs Animados & Galeria</h2>
+            <p>Imagens, GIFs ilustrados por IA, prints e logos do NAS com paginação e zoom.</p>
+          </div>
+          <span class="badge-chip" id="galTotalBadge">0 imagens</span>
+        </div>
+        <div class="feature-card">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="text" class="form-input" id="genMediaPrompt" placeholder="Descreve a imagem ou animação GIF que queres gerar (ex: 'Cyberpunk space station hud', 'Radar neon pulso')…" style="flex:1;min-width:220px">
+            <select class="header-select" id="genAspect">
+              <option value="1:1">Quadrado 1:1</option>
+              <option value="16:9">Widescreen 16:9</option>
+              <option value="9:16">Vertical 9:16 (Mobile)</option>
+            </select>
+            <button type="button" class="send-circle-btn" id="btnGenImage">🖼 Gerar Imagem AI</button>
+            <button type="button" class="round-tool-btn magic" id="btnGenGif" style="height:35px">🎞 Gerar GIF Animado</button>
+          </div>
+          <p class="muted">GIF: ilustração 2D animada a partir da tua descrição · até 640 px · 16 fps · loop de 3 s. Usa o saldo DeepSeek.</p>
+          <p id="genMediaFeedback" role="status" aria-live="polite"></p>
+        </div>
+
+        <!-- BARRA DE FILTROS, PESQUISA, SLIDER DE ZOOM & ITENS POR PÁGINA -->
+        <div class="feature-card" style="padding:11px 14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap" id="galFilterTabs">
+              <button type="button" class="card-btn primary" data-gkind="all">🌟 Todas</button>
+              <button type="button" class="card-btn" data-gkind="ai">🎨 AI & GIFs</button>
+              <button type="button" class="card-btn" data-gkind="paste">📋 Prints & Pastes</button>
+              <button type="button" class="card-btn" data-gkind="nas_asset">🖼️ Logos & NAS</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;justify-content:flex-end">
+              <input type="search" class="form-input" id="galSearchInput" placeholder="Procurar na galeria…" style="max-width:210px;height:34px;padding:0 11px">
+              <label style="display:inline-flex;align-items:center;gap:7px;font-size:0.74rem;color:var(--muted);white-space:nowrap">
+                <span>🔎 Zoom</span>
+                <input type="range" class="ui-slider" id="galZoomSlider" min="130" max="320" value="200" style="width:95px">
+              </label>
+              <select class="header-select" id="galPerPage" title="Imagens por página">
+                <option value="12">12 / pág</option>
+                <option value="24" selected>24 / pág</option>
+                <option value="48">48 / pág</option>
+                <option value="999">Todas</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="gallery-grid" id="galleryGrid"></div>
+        <div class="pagination-bar" id="galleryPagination"></div>
+      </div>
+    </div>
+
+    <!-- MÓDULO 3: MEDIA (SONARR / RADARR) & CONTAINERS DOCKER -->
+    <div class="mod-pane" id="paneMedia" hidden>
+      <div class="hub-scroll anim-in">
+        <div class="hub-hero">
+          <div>
+            <h2>🎬 Cinema, Séries (Radarr & Sonarr) & Containers Docker</h2>
+            <p>Pesquisa e coloca filmes ou séries a sacar com 1 clique, ou executa ações diretas nos containers do Pavilion-NAS.</p>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div style="font-weight:700;font-size:0.88rem">🍿 Pedir Filme (Radarr :7878) ou Série (Sonarr :8989)</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="header-select" id="selMediaKind">
+              <option value="movie">🎬 Filme (Radarr)</option>
+              <option value="series">📺 Série (Sonarr)</option>
+            </select>
+            <input type="search" class="form-input" id="mediaSearchInput" placeholder="Escreve o nome do filme ou série (ex: Severance, Dune, Andor)…" style="flex:1;min-width:200px">
+            <button type="button" class="send-circle-btn" id="btnSearchMedia">🔍 Procurar</button>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <strong>⬇️ Estado dos downloads e pedidos recentes</strong>
+            <button type="button" class="round-tool-btn" id="btnRefreshMediaQueue">🔄 Atualizar</button>
+          </div>
+          <div id="mediaQueueBox" aria-live="polite" style="font-size:0.82rem;color:var(--muted)">A consultar Radarr e Sonarr…</div>
+          <div class="cards-grid" id="mediaResultsGrid"></div>
+        </div>
+
+        <div class="sec-label-row" style="padding:0"><span>🐳 CONTAINERS DOCKER & AÇÕES PREDEFINIDAS</span></div>
+        <div class="cards-grid" id="containersGrid"></div>
+      </div>
+    </div>
+
+    <!-- MÓDULO 4: CASA, IMPRESSÃO 3D (HOME ASSISTANT) & SCHEDULERS -->
+    <div class="mod-pane" id="paneCasa" hidden>
+      <div class="hub-scroll anim-in">
+        <div class="hub-hero">
+          <div>
+            <h2>🏠 Casa, Impressão 3D (Home Assistant) & Schedulers</h2>
+            <p>Controla as impressoras Centauri Carbon 2 e Qidi Plus 4, tomadas inteligentes e tarefas agendadas do Maestro.</p>
+          </div>
+          <button type="button" class="icon-pill-btn" id="btnRefreshHa">🔄 Atualizar HA</button>
+        </div>
+
+        <div class="sec-label-row" style="padding:0"><span>🖨️ IMPRESSORAS 3D EM TEMPO REAL</span></div>
+        <div class="cards-grid" id="haPrintersGrid"></div>
+
+        <div class="sec-label-row" style="padding:0"><span>🔌 TOMADAS INTELIGENTES & LUZES (1-TOQUE)</span></div>
+        <div class="cards-grid" id="haSwitchesGrid"></div>
+
+        <div class="sec-label-row" style="padding:0"><span>⏰ SCHEDULERS & AUTOMAÇÃO MAESTRO + HA</span></div>
+        <div class="feature-card">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="text" class="form-input" id="schedName" placeholder="Nome da automação (ex: Relatório Noturno)" style="flex:1;min-width:150px">
+            <input type="time" class="form-input" id="schedTime" value="09:00" style="width:120px">
+            <select class="header-select" id="schedKind">
+              <option value="maestro_prompt">🧠 Pedido ao Maestro AI</option>
+              <option value="ha_toggle">🔌 Ligar/Desligar Entidade HA</option>
+              <option value="docker_restart">🐳 Reiniciar Container Docker</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="text" class="form-input" id="schedTarget" placeholder="Prompt Maestro, entity_id (ex: light.centauri_carbon_2_chamber_light) ou container…" style="flex:1">
+            <button type="button" class="send-circle-btn" id="btnAddSchedule">＋ Agendar</button>
+          </div>
+          <div class="cards-grid" id="schedulesGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MÓDULO 5: ARTIFACTS & PROJETOS -->
+    <div class="mod-pane" id="paneArtifacts" hidden>
+      <div class="hub-scroll anim-in">
+        <div class="hub-hero">
+          <div>
+            <h2>🧩 Biblioteca de Artifacts & Previews</h2>
+            <p>Snippets de código, interfaces HTML/SVG e configurações geradas ou guardadas nas tuas pastas coloridas.</p>
+          </div>
+        </div>
+        <div class="cards-grid" id="artifactsGrid"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- COLUNA 3: SPLIT ARTIFACT / CODE / LIVE PREVIEW CANVAS -->
+  <section class="artifact-canvas" id="artifactCanvas" hidden>
+    <div class="canvas-head">
+      <span class="canvas-title" id="canvasTitle">Artifact</span>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="icon-pill-btn" id="btnPreviewCanvas" hidden>👁 Preview</button>
+        <button type="button" class="icon-pill-btn ico-only" id="btnCopyCanvas" aria-label="Copiar" data-tip="Copiar|Copia o código do canvas para a área de transferência.">📋</button>
+        <button type="button" class="icon-pill-btn" id="btnCloseCanvas">✕</button>
+      </div>
+    </div>
+    <div class="canvas-body" id="canvasBody"></div>
+    <iframe class="canvas-iframe" id="canvasIframe" hidden sandbox="allow-scripts"></iframe>
+  </section>
+
+  <!-- COLUNA 4: STUDIO INSPECTOR DIREITO -->
+  <aside class="inspector-right" id="inspectorRight" aria-label="Painel do Maestro">
+    <div class="drawer-handle" aria-hidden="true"><span></span></div>
+    <div class="insp-tabs" role="tablist" aria-label="Painel do Maestro">
+      <button class="insp-tab active" id="itab-quotas" role="tab" aria-controls="inspBody" aria-selected="true" tabindex="0" data-itab="quotas">📊 Quotas</button>
+      <button class="insp-tab" id="itab-pulso" role="tab" aria-controls="inspBody" aria-selected="false" tabindex="-1" data-itab="pulso">💓 Pulso</button>
+      <button class="insp-tab" id="itab-git" role="tab" aria-controls="inspBody" aria-selected="false" tabindex="-1" data-itab="git">📁 Git/Files</button>
+      <button class="insp-tab" id="itab-fleet" role="tab" aria-controls="inspBody" aria-selected="false" tabindex="-1" data-itab="fleet">🤖 Frota</button>
+    </div>
+    <div class="insp-body" id="inspBody" role="tabpanel" aria-labelledby="itab-quotas" tabindex="0"></div>
+  </aside>
+
+  <!-- BARRA INFERIOR MOBILE / TABLET -->
+  <nav class="mobile-bottom-nav" id="mobileBottomNav">
+    <button class="mob-nav-item active" data-mod="chat"><span class="ico">💬</span><span>Chat</span></button>
+    <button class="mob-nav-item" data-mod="studio"><span class="ico">🎨</span><span>Galeria</span></button>
+    <button class="mob-nav-item" data-mod="media"><span class="ico">🎬</span><span>Filmes</span></button>
+    <button class="mob-nav-item" data-mod="casa"><span class="ico">🏠</span><span>Casa/HA</span></button>
+    <button class="mob-nav-item" data-mod="artifacts"><span class="ico">🧩</span><span>Artifacts</span></button>
+  </nav>
+</div>
+
+<!-- MODAL: CRIAR / EDITAR PASTA COLORIDA -->
+<div class="modal-backdrop" id="agentModal" hidden>
+  <div class="modal-card anim-in" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong id="agentModalTitle" style="font-size:1.02rem">🤖 Agente</strong>
+      <button type="button" class="icon-pill-btn" id="btnCloseAgentModal">✕</button>
+    </div>
+    <div id="agentModalBody" style="display:flex;flex-direction:column;gap:8px;margin-top:10px"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="folderModal" hidden>
+  <div class="modal-card anim-in">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong style="font-size:1rem" data-i18n="modal_folder_title">🎨 Nova Pasta / Projeto Colorido</strong>
+      <button type="button" class="icon-pill-btn" id="btnCloseFolderModal">✕</button>
+    </div>
+    <input type="text" class="form-input" id="fName" placeholder="Nome da pasta (ex: Mods Starfield, Finanças, IA)">
+    <div style="display:flex;gap:8px">
+      <input type="text" class="form-input" id="fIcon" value="🚀" placeholder="Ícone Emoji" style="width:90px">
+      <input type="color" class="form-input" id="fColor" value="#38bdf8" style="width:90px;padding:3px;height:40px">
+      <input type="text" class="form-input" id="fCwd" value="/home/hubert" placeholder="Caminho no servidor (cwd)" style="flex:1">
+    </div>
+    <input type="text" class="form-input" id="fDesc" placeholder="Descrição / contexto para o Maestro AI">
+    <button type="button" class="send-circle-btn" id="btnSaveFolder" style="justify-content:center;height:40px" data-i18n="save_folder_btn">Guardar Pasta Colorida</button>
+  </div>
+</div>
+
+<!-- MODAL: OPÇÕES, IDIOMA (PT/EN), PERSONALIZADOR DE CORES & INSTALADORES -->
+<div class="modal-backdrop" id="settingsModal" hidden>
+  <div class="modal-card anim-in" style="max-width:540px;max-height:90dvh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong style="font-size:1.05rem" data-i18n="settings_title">⚙️ Opções, Idioma, Cores & Instaladores</strong>
+      <button type="button" class="icon-pill-btn" id="btnCloseSettingsModal">✕</button>
+    </div>
+
+    <!-- 1. IDIOMA / LANGUAGE -->
+    <div class="feature-card" style="padding:12px">
+      <div style="font-size:0.78rem;font-weight:700;color:var(--cyan)" data-i18n="sec_lang">🌐 IDIOMA DA INTERFACE / LANGUAGE</div>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="icon-pill-btn" id="btnLangPt" style="flex:1;justify-content:center;padding:9px">🇵🇹 Português (PT)</button>
+        <button type="button" class="icon-pill-btn" id="btnLangEn" style="flex:1;justify-content:center;padding:9px">🇬🇧 English (EN)</button>
+      </div>
+    </div>
+
+    <!-- 2. ESTILO DE ÍCONES (UNICOLOR SVG / DUOTONE / COLORIDOS) -->
+    <div class="feature-card" style="padding:12px">
+      <div style="font-size:0.78rem;font-weight:700;color:var(--cyan)" data-i18n="sec_icons">✨ ESTILO DE ÍCONES (UNICOLOR / DUOTONE / COLORIDO)</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px" id="iconStyleGrid">
+        <button type="button" class="card-btn" data-icostyle="unicolor" id="btnIcoUnicolor">✨ Unicolor SVG</button>
+        <button type="button" class="card-btn" data-icostyle="duotone" id="btnIcoDuotone">💎 Duotone Neon</button>
+        <button type="button" class="card-btn" data-icostyle="color" id="btnIcoColor">🎨 Coloridos</button>
+      </div>
+    </div>
+
+    <div class="feature-card" style="padding:12px">
+      <button type="button" class="card-btn" id="btnLessOutlines">▢ Menos contornos: OFF</button>
+    </div>
+
+    <!-- 2b. MUNDOS VISUAIS -->
+    <div class="feature-card" style="padding:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:0.78rem;font-weight:700;color:var(--cyan)">🌍 MUNDOS VISUAIS (ESTILO GLOBAL)</span>
+        <button type="button" class="card-btn" id="btnWorldReset" style="padding:3px 9px;font-size:0.7rem">↺ Padrão</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px" id="worldGrid">
+        <button type="button" class="card-btn" data-world-pick="matrix">🟩 Matrix</button>
+        <button type="button" class="card-btn" data-world-pick="scifi">🛰 Sci-Fi HUD</button>
+        <button type="button" class="card-btn" data-world-pick="cyberpunk">🌆 Cyberpunk</button>
+        <button type="button" class="card-btn" data-world-pick="hesperia">🏛 Hesperia</button>
+        <button type="button" class="card-btn" data-world-pick="dune">🏜 Dune · Arrakis</button>
+        <button type="button" class="card-btn" data-world-pick="dungen">🪨 Hubert Dungen</button>
+      </div>
+      <div style="font-size:0.68rem;color:var(--muted);margin-top:2px">Muda fontes, cores e texturas da app inteira. As cores finas continuam nos temas abaixo.</div>
+    </div>
+
+    <!-- 3. PERSONALIZADOR DE TEMAS & CORES -->
+    <div class="feature-card" style="padding:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:0.78rem;font-weight:700;color:var(--cyan)" data-i18n="sec_theme">🎨 TEMAS & PERSONALIZADOR DE CORES</span>
+        <button type="button" class="card-btn" id="btnResetTheme" style="padding:3px 9px;font-size:0.7rem" data-i18n="reset_theme">↺ Repor Padrão</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:6px" id="themePresetsGrid">
+        <button type="button" class="card-btn" data-preset="cyber">🌌 Cyber Nebula</button>
+        <button type="button" class="card-btn" data-preset="emerald">🌲 Emerald Matrix</button>
+        <button type="button" class="card-btn" data-preset="solar">🔥 Solar Polistrat</button>
+        <button type="button" class="card-btn" data-preset="opus">👑 Royal Opus</button>
+        <button type="button" class="card-btn" data-preset="oled">🖤 Pure OLED Black</button>
+        <button type="button" class="card-btn" data-preset="crimson">⚡ Crimson Synth</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:4px">
+        <label style="display:flex;align-items:center;justify-content:space-between;font-size:0.76rem;color:var(--muted);background:var(--bg);padding:6px 10px;border-radius:10px;border:1px solid var(--line)">
+          <span data-i18n="col_primary">Cor Principal</span>
+          <input type="color" id="colCyan" value="#38bdf8" style="border:none;background:none;width:32px;height:26px;cursor:pointer">
+        </label>
+        <label style="display:flex;align-items:center;justify-content:space-between;font-size:0.76rem;color:var(--muted);background:var(--bg);padding:6px 10px;border-radius:10px;border:1px solid var(--line)">
+          <span data-i18n="col_secondary">Brilho / Glow</span>
+          <input type="color" id="colViolet" value="#a855f7" style="border:none;background:none;width:32px;height:26px;cursor:pointer">
+        </label>
+        <label style="display:flex;align-items:center;justify-content:space-between;font-size:0.76rem;color:var(--muted);background:var(--bg);padding:6px 10px;border-radius:10px;border:1px solid var(--line)">
+          <span data-i18n="col_bg">Fundo App</span>
+          <input type="color" id="colBg" value="#050811" style="border:none;background:none;width:32px;height:26px;cursor:pointer">
+        </label>
+        <label style="display:flex;align-items:center;justify-content:space-between;font-size:0.76rem;color:var(--muted);background:var(--bg);padding:6px 10px;border-radius:10px;border:1px solid var(--line)">
+          <span data-i18n="col_panel">Painéis / Cartões</span>
+          <input type="color" id="colPanel" value="#0a0f1d" style="border:none;background:none;width:32px;height:26px;cursor:pointer">
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px;flex-wrap:wrap">
+        <span style="font-size:0.76rem;color:var(--muted)" data-i18n="ui_scale_lbl">Escala da Interface / Texto:</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="range" class="ui-slider" id="uiScaleSlider" min="13" max="18" step="0.5" value="15.5" style="width:110px">
+          <button type="button" class="card-btn" data-scale="14px">90%</button>
+          <button type="button" class="card-btn" data-scale="15.5px">100%</button>
+          <button type="button" class="card-btn" data-scale="17px">110%</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. AUTO-UPDATER AO VIVO & INSTALADORES (WINDOWS .EXE + ANDROID/TABLET PWA) -->
+    <div class="feature-card" style="padding:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <span style="font-size:0.78rem;font-weight:700;color:var(--cyan)" data-i18n="sec_updater">🔄 AUTO-UPDATER & INSTALADORES DA APP</span>
+        <span class="badge-chip" id="versionBadge">v3.2 · Live</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg);padding:8px 10px;border-radius:10px;border:1px solid var(--line)">
+        <div style="font-size:0.74rem;color:var(--muted)" data-i18n="updater_desc">
+          Atualiza automaticamente a interface e o .exe sempre que o Maestro evolui no servidor.
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button type="button" class="card-btn primary" id="btnToggleAutoUpdate">🔄 Auto: ON</button>
+          <button type="button" class="card-btn" id="btnCheckUpdateNow" data-i18n="check_upd_btn">Verificar</button>
+          <button type="button" class="card-btn primary" id="btnRefreshSettings">↻ Atualizar app</button>
+        </div>
+      </div>
+      <p style="font-size:0.75rem;color:var(--muted);line-height:1.4;margin-top:2px" data-i18n="install_desc">
+        Instala o Maestro AI Studio como aplicação nativa no teu Windows (ecrãs grandes) ou no telemóvel/tablet Android & iOS.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a class="exe-download-btn" href="/Maestro-AI-Atalho.bat" download="Maestro-AI-Atalho.bat" style="flex:1;min-width:210px">
+          💻 <span data-i18n="dl_exe_btn">Instalar no Windows (atalho)</span>
+        </a>
+        <button type="button" class="card-btn primary" id="btnInstallPwa" style="flex:1;min-width:180px;padding:10px">
+          📲 <span data-i18n="dl_pwa_btn">Instalar App Android / Tablet</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/ui/app.js"></script>
+</body>
+</html>
