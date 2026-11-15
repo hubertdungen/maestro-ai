@@ -1911,10 +1911,13 @@ function esc(s) {
   }
 
   function composerHasFocus() {
-    return document.activeElement === document.getElementById("promptInput");
+    /* Escrever já não congela o chat: quem está no fundo continua a seguir a
+       última mensagem; só quem subiu (follow=false) fica parado. */
+    return false;
   }
 
   function pauseChatForComposer() {
+    if (distanceToBottom(chatScrollBox()) <= 8) return; /* no fundo: continua a seguir */
     setChatFollow(false);
     if (_autoScrollRaf) window.cancelAnimationFrame(_autoScrollRaf);
     _autoScrollRaf = 0;
