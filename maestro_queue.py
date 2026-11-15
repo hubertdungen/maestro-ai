@@ -1,4 +1,4 @@
-"""Durable turn queue and conservative, quota-aware admission policy (no LLM calls)."""
+"""Durable turn queue and conservative, quota-aware admission policy with bounded Sentinel triage."""
 import json
 import pathlib
 import re
@@ -391,23 +391,46 @@ TRIAGE_PROMPT = (
 )
 
 
-def triage_independent(task, others, claude_bin):
-    """Haiku decides if `task` may run beside `others` (texts). Cached; any failure => wait (safe)."""
+def triage_independent(task, others, claude_bin, fallback=None):
+    """Sentinel: Haiku → optional provider fallback → local wait; cache valid verdicts only."""
     import os, subprocess
     texts = [str(o.get('text') or '')[:400] for o in others]
-    key = (task['id'], tuple(o.get('id') for o in others))
-    if key in _TRIAGE_CACHE:
-        return _TRIAGE_CACHE[key]
-    if not texts or len(normalized(task.get('text', '')).split()) < 5:  # images/docs no longer veto: most requests carry screenshots
-        return False
     prompt = TRIAGE_PROMPT.format(new=(task.get('text') or '')[:600],
                                   others='\n'.join(f'- <<{t}>>' for t in texts))
+    # Include text, not just IDs: edited requests need fresh classification.
+    key = (task['id'], tuple(o.get('id') for o in others), prompt)
+    if key in _TRIAGE_CACHE:
+        return _TRIAGE_CACHE[key]
+    if not texts or len(normalized(task.get('text', '')).split()) < 5:
+        return False
+
+    def remember(raw, engine):
+        verdict = str(raw or '').strip().upper()
+        if verdict not in ('PARALELO', 'ESPERAR'):
+            return None
+        result = verdict == 'PARALELO'
+        # Bounded memory, and no sticky errors on provider outages.
+        if len(_TRIAGE_CACHE) >= 512:
+            _TRIAGE_CACHE.clear()
+        _TRIAGE_CACHE[key] = result
+        task['triage'] = dict(role='sentinel', engine=engine, verdict=verdict)
+        return result
+
     try:
         out = subprocess.run([claude_bin, '-p', prompt, '--model', 'haiku', '--allowedTools', ''],
-                             capture_output=True, text=True, timeout=60, cwd='/tmp',
+                             capture_output=True, text=True, timeout=20, cwd='/tmp',
                              env={k: v for k, v in os.environ.items() if k != 'CCA_TOKEN'})
-        verdict = out.returncode == 0 and 'PARALELO' in (out.stdout or '').upper()
+        result = remember(out.stdout, 'haiku') if out.returncode == 0 else None
+        if result is not None:
+            return result
     except Exception:
-        return False  # not cached: retry next pass
-    _TRIAGE_CACHE[key] = verdict
-    return verdict
+        pass
+    if fallback:
+        try:
+            result = remember(fallback(prompt), 'deepseek')
+            if result is not None:
+                return result
+        except Exception:
+            pass
+    task['triage'] = dict(role='sentinel', engine='local', verdict='ESPERAR', reason='providers_unavailable')
+    return False  # Do not cache outages: the next scheduler pass may retry.

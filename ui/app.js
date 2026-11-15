@@ -1,3 +1,8 @@
+// Functional identities stay stable when the underlying provider changes.
+window.maestroRoleTag = function(role){
+  var names = {maestro:'Maestro',planner:'Architect',analysis:'Analyst',sentinel:'Sentinel',scout:'Scout',implementation:'Maker',review:'Auditor',synthesis:'Scribe'};
+  return names[role] ? '<span class="role-tag role-' + role + '">' + names[role] + '</span>' : '';
+};
 (function(){
   var state = {
     mod: "chat",
@@ -1459,7 +1464,7 @@ function esc(s) {
     if (m.role === "assistant" && m.plan) {
       inner +=
         '<details class="orch-details">' +
-          '<summary>🧠 ' + ui('Orquestração', 'Orchestration') + ' · ' + esc(routeText(m.plan.domain)) + ' (' + esc(routeText(m.plan.dimension)) + ')' +
+          '<summary>' + window.maestroRoleTag('maestro') + ' ' + ui('Orquestração', 'Orchestration') + ' · ' + esc(routeText(m.plan.domain)) + ' (' + esc(routeText(m.plan.dimension)) + ')' +
             (m.plan.agents && m.plan.agents.length ? ' → ' + esc(m.plan.agents.join(" ➔ ")) : '') +
             (m.elapsed_s ? ' · ' + m.elapsed_s + 's' : '') +
           '</summary>' +
@@ -2558,6 +2563,18 @@ function esc(s) {
       '<span>' + ui("espera sem tokens", "waiting costs no tokens") + '</span>' +
       '<span>' + ui("retoma preserva concluídas", "resume keeps completed") + '</span>' +
     '</div>';
+
+    now += '<details class="mt-roles"><summary>' + ui('Funções e tags', 'Roles and tags') + '</summary><div class="mt-role-grid">' + [
+      ['maestro', ui('Coordena e distribui o trabalho.', 'Coordinates and assigns work.')],
+      ['planner', ui('Função de planeamento: define a estratégia e dependências.', 'Planning function: defines strategy and dependencies.')],
+      ['sentinel', ui('Triagem da fila: Haiku → DeepSeek Flash → espera local se ambos falharem.', 'Queue triage: Haiku → DeepSeek Flash → local wait if both fail.')],
+      ['scout', ui('Investiga ficheiros e recolhe contexto.', 'Inspects files and gathers context.')],
+      ['analysis', ui('Analisa problemas e propõe soluções.', 'Analyses problems and proposes solutions.')],
+      ['implementation', ui('Implementa e valida alterações.', 'Implements and validates changes.')],
+      ['review', ui('Revê o resultado e identifica falhas.', 'Reviews results and identifies issues.')],
+      ['synthesis', ui('Sintetiza conclusões e resultados.', 'Synthesises findings and results.')]
+    ].map(function(r){ return '<div>' + window.maestroRoleTag(r[0]) + '<span>' + r[1] + '</span></div>'; }).join('') + '</div><p>' +
+      ui('Tags identificam funções, não modelos nem agentes adicionais. Um motor pode assumir várias funções. Os títulos automáticos usam DeepSeek, com alternativa local.', 'Tags identify functions, not models or extra agents. One engine can serve several roles. Automatic titles use DeepSeek with a local fallback.') + '</p></details>';
 
     var idx = 0;
     setTimeout(function(){ state._mtSeen = true; }, 1500);
@@ -5924,11 +5941,11 @@ function esc(s) {
     return {turn: turn || wf.turn_id || '', coord: coord || 'Orquestrador', reason: wf.reason || '', source: wf.planning_source || '', created: wf.created_at, status: wf.status,
       nodes: (wf.nodes || []).map(function(n){ var r = n.result || {};
         return {id:n.id, title:n.title || n.id, status:n.status || 'pending', engine:r.agent_used || n.actual_agent || n.engine || '', model:n.model_id || r.model_id || '',
-          deps:n.depends_on || [], note:n.error || n.reason || '', text:typeof r === 'string' ? r : (r.text || ''), started:n.started_at, finished:n.finished_at, guided:(n.guidance || []).length}; })};
+          role:n.role, deps:n.depends_on || [], note:n.error || n.reason || '', text:typeof r === 'string' ? r : (r.text || ''), started:n.started_at, finished:n.finished_at, guided:(n.guidance || []).length}; })};
   };
   S.fromSubtasks = function(tasks){
     return {turn:'', coord:'Orquestrador', reason:'', source:'', nodes:(tasks || []).map(function(t){
-      return {id:t.node_id, title:t.title, status:t.status, engine:t.engine, model:t.model, deps:t.deps || [], note:'', text:''}; })};
+      return {id:t.node_id, title:t.title, status:t.status, engine:t.engine, model:t.model, role:t.role, deps:t.deps || [], note:'', text:''}; })};
   };
 
   S.summary = function(tasks){
@@ -5946,13 +5963,13 @@ function esc(s) {
     m.nodes.forEach(function(n){ (rows[dp(n, {})] = rows[dp(n, {})] || []).push(n); });
     var rootState = m.nodes.some(function(n){ return n.status === 'running'; }) ? 'running' : (m.nodes.length && m.nodes.every(function(n){ return n.status === 'done'; }) ? 'done' : 'pending');
     var h = '<div class="st-tree" data-edges="' + e(JSON.stringify(m.nodes.map(function(n){ return [n.id, n.deps, n.status]; }))) + '">' +
-      '<div class="st-row"><div class="st-node st-root" data-id="__root" data-status="' + rootState + '"><b>🧭 ' + e(m.coord) + '</b><small>Orquestrador' + (m.source ? ' · plano ' + e(m.source === 'coordinator' ? 'do coordenador' : 'de reserva') : '') + '</small></div></div>';
+      '<div class="st-row"><div class="st-node st-root" data-id="__root" data-status="' + rootState + '"><b>' + window.maestroRoleTag('maestro') + ' ' + e(m.coord) + '</b><small>' + window.maestroRoleTag('planner') + ' · Orquestrador' + (m.source ? ' · plano ' + e(m.source === 'coordinator' ? 'do coordenador' : 'de reserva') : '') + '</small></div></div>';
     rows.forEach(function(row){
       h += '<div class="st-row">' + (row || []).map(function(n){
         var tag = window.mtag ? window.mtag(n.engine, n.model) : '';
         var decision = clip(n.note || n.text, 150);
         return '<div class="st-node" tabindex="0" data-id="' + e(n.id) + '" data-status="' + e(n.status) + '"><span class="st-title"><i>' + (ICO[n.status] || '○') + '</i>' + e(n.title) + '</span>' +
-          '<small>' + e(LBL[n.status] || n.status) + (n.engine ? ' · ' + e(clip(n.engine, 24)) : '') + ' ' + tag + '</small>' +
+          '<small>' + window.maestroRoleTag(n.role) + ' ' + e(LBL[n.status] || n.status) + (n.engine ? ' · ' + e(clip(n.engine, 24)) : '') + ' ' + tag + '</small>' +
           (decision ? '<small class="st-decision">' + e(decision) + '</small>' : '') + '</div>';
       }).join('') + '</div>';
     });
