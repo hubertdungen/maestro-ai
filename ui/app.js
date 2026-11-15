@@ -2552,13 +2552,15 @@ function esc(s) {
       '<div><span>🧭 ' + ui("Decisão", "Decision") + '</span><b>' + ui("Maestro / coordenador", "Maestro / coordinator") + '</b><small>' + ui("divide, atribui e espera sem chamar o modelo.", "splits, assigns and waits without calling the model.") + '</small></div>' +
     '</div>' +
     '<div class="mt-facts">' +
-      '<span>🧩 ' + ui("até 6 tarefas", "up to 6 tasks") + '</span>' +
-      '<span>📚 ' + ui("Até 4 agentes, conforme o pedido", "Up to 4 agents, according to the request") + '</span>' +
-      '<span>✍️ ' + ui("1 agente por plano; escrita isolada por projeto", "1 agent per subscription; writes isolated per project") + '</span>' +
-      '<span>⏸ ' + ui("espera sem tokens", "waiting costs no tokens") + '</span>' +
-      '<span>↩️ ' + ui("retoma preserva concluídas", "resume keeps completed") + '</span>' +
+      '<span>' + ui("até 6 tarefas", "up to 6 tasks") + '</span>' +
+      '<span>' + ui("Até 4 agentes, conforme o pedido", "Up to 4 agents, according to the request") + '</span>' +
+      '<span>' + ui("1 agente por plano; escrita isolada por projeto", "1 agent per plan; writes isolated per project") + '</span>' +
+      '<span>' + ui("espera sem tokens", "waiting costs no tokens") + '</span>' +
+      '<span>' + ui("retoma preserva concluídas", "resume keeps completed") + '</span>' +
     '</div>';
 
+    var idx = 0;
+    setTimeout(function(){ state._mtSeen = true; }, 1500);
     var rows = (orch.rows || []).map(function(r) {
       var isMotor = r.key === motorKey;
       var decision = r.is_maestro
@@ -2569,14 +2571,11 @@ function esc(s) {
       if (isMotor) chips.push('<span class="mt-chip motor">' + ui("MOTOR DESTE TURNO", "THIS TURN") + '</span>');
       chips.push('<span class="mt-chip ' + (r.available ? 'ok' : 'bad') + '">' +
         (r.available ? ui("DISPONÍVEL", "AVAILABLE") : (r.model_count ? ui("ESGOTADO", "EXHAUSTED") : ui("SEM CATÁLOGO", "NO CATALOGUE"))) + '</span>');
-      (r.access || []).forEach(function(a) { chips.push('<span class="mt-chip ghost">' + esc(a) + '</span>'); });
 
       var effortHead = r.effort_count
         ? (r.effort_count + ' ' + ui("esforços", "efforts"))
         : ui("esforço no ID/perfil", "effort in ID/profile");
-      var models = r.models && r.models.length ? '<div class="mt-models-head">' +
-          r.model_count + ' ' + ui("modelos", "models") + ' · ' + effortHead +
-        '</div><details class="mt-model-details" data-model-group="' + esc(r.key) + '"><summary>' + ui("Ver modelos e finalidades", "Models and purposes") + '</summary><div class="mt-model-list">' + r.models.map(function(m) {
+      var modelList = r.models && r.models.length ? r.models.map(function(m) {
         var effort = (m.efforts && m.efforts.length) ? m.efforts.join(" · ") : ui("esforço no ID", "effort in ID");
         return '<div class="mt-model' + (m.available ? '' : ' off') + '">' +
           '<span class="mt-dot ' + (m.available ? 'ok' : 'bad') + '"></span>' +
@@ -2584,34 +2583,34 @@ function esc(s) {
           (m.read_only_only ? '<span class="mt-chip ghost">' + ui("só leitura", "read-only") + '</span>' : '') +
           '<div class="mt-purpose">' + esc(m.purpose || m.note || '') + '</div>' +
           '<div class="mt-eff">' + esc(effort) + '</div>' +
-          '<div class="mt-note">' + esc(m.quota_group || '') + ' · ' + ui("acesso por confirmar na execução", "access confirmed on execution") + '</div>' +
         '</div>';
-      }).join("") + '</div></details>' : '<div class="mt-note">' + ui("Sem modelos confirmados pelo CLI; a linha não promete acesso.", "No models confirmed by the CLI; this row does not promise access.") + '</div>';
+      }).join("") : '<div class="mt-note">' + ui("Sem modelos confirmados pelo CLI; a linha não promete acesso.", "No models confirmed by the CLI; this row does not promise access.") + '</div>';
 
       var tasks = (r.active_tasks && r.active_tasks.length)
         ? '<div class="mt-tasks">' + r.active_tasks.map(function(t) {
             return '<div>▶ ' + esc(t.agent_label || ui("Agente", "Agent")) + ' · ' + esc(t.current_step || ui("a trabalhar", "working")) + '</div>';
           }).join("") + '</div>'
-        : '<div class="mt-note">' + ui("Sem tarefa ativa neste momento.", "No active task right now.") + '</div>';
+        : '';
+      var tone = r.available ? 'ok' : 'bad';
 
-      return '<tr class="' + (isMotor ? 'mt-current' : '') + '">' +
-        '<td data-l="' + ui("Agente / papel", "Agent / role") + '">' +
-          '<div class="mt-agent"><b>' + esc(r.icon) + ' ' + esc(r.name) + '</b><span class="mt-rank">' + esc(r.rank) + '</span></div>' +
-          '<div class="mt-role">' + esc(r.role) + '</div>' +
+      return '<article class="mt-ac ' + tone + (isMotor ? ' current' : '') + '" style="--i:' + idx++ + '">' +
+        '<header class="mt-ac-head">' +
+          '<span class="mt-dot big ' + tone + '"></span>' +
+          '<b>' + esc(r.icon) + ' ' + esc(r.name) + '</b>' +
+          '<span class="mt-rank">' + esc(r.rank) + '</span>' +
+        '</header>' +
+        '<div class="mt-role">' + esc(r.role) + '</div>' +
+        '<div class="mt-chips">' + chips.join("") + '</div>' +
+        '<div class="mt-quota"><span class="quota-chip ' + esc(r.quota.tone || "ok") + '">' + esc(r.quota.label) + '</span>' +
+          (r.quota.reset ? '<span class="mt-note">' + ui("Reset: ", "Reset: ") + esc(r.quota.reset) + '</span>' : '') + '</div>' +
+        tasks +
+        '<details class="mt-more" data-model-group="' + esc(r.key) + '"><summary>' + ui("Detalhes", "Details") +
+          ' · ' + r.model_count + ' ' + ui("modelos", "models") + ' · ' + effortHead + '</summary>' +
           '<div class="mt-decision">🧭 ' + esc(decision) + '</div>' +
-          '<div class="mt-chips">' + chips.join("") + '</div>' +
-        '</td>' +
-        '<td data-l="' + ui("Modelos e esforços", "Models and efforts") + '">' + models + '</td>' +
-        '<td data-l="' + ui("Quota / agora", "Quota / now") + '">' +
-          '<div class="mt-quota">' +
-            '<span class="quota-chip ' + esc(r.quota.tone || "ok") + '">' + esc(r.quota.label) + '</span>' +
-            '<div class="mt-note">' + ui("Reset: ", "Reset: ") + esc(r.quota.reset || "—") + '</div>' +
-            '<div class="mt-note">' + esc(r.quota.detail || "") + '</div>' +
-            (r.quota.source ? '<div class="mt-note">fonte: ' + esc(r.quota.source) + '</div>' : '') +
-            tasks +
-          '</div>' +
-        '</td>' +
-      '</tr>';
+          (r.quota.detail ? '<div class="mt-note">' + esc(r.quota.detail) + (r.quota.source ? ' (' + esc(r.quota.source) + ')' : '') + '</div>' : '') +
+          '<div class="mt-model-list">' + modelList + '</div>' +
+        '</details>' +
+      '</article>';
     }).join("");
 
     var policy = (orch.policy || []).map(function(p) {
@@ -2632,13 +2631,10 @@ function esc(s) {
         '<span class="quota-chip ' + ((counts.available_models || 0) > 0 ? 'ok' : 'bad') + '">' +
           (counts.available_models || 0) + '/' + (counts.models || 0) + ' ' + ui("modelos disponíveis", "models available") +
         '</span></div>' +
-      '<div class="stat-sub">' + ui("Quem decide, quem executa e com que modelos/esforços. A linha é a hierarquia real; a quota é lida agora.", "Who decides, who executes and with which models/efforts. Rows follow the real hierarchy; quota is read now.") + '</div>' +
+      '<div class="stat-sub">' + ui("Quem decide, quem executa e com que modelos. Quota lida agora.", "Who decides, who executes and with which models. Quota read live.") + '</div>' +
       now +
-      '<div class="rich-table-wrap"><table class="rich-table mt-table">' +
-        '<thead><tr><th>' + ui("Agente / papel", "Agent / role") + '</th><th>' + ui("Modelos e esforços", "Models and efforts") + '</th><th>' + ui("Quota / agora", "Quota / now") + '</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table></div>' +
-      '<details class="rules-details" open>' +
+      '<div class="mt-grid' + (state._mtSeen ? ' seen' : '') + '">' + rows + '</div>' +
+      '<details class="rules-details">' +
         '<summary>🧭 ' + ui("Como o Maestro distribui, espera e retoma", "How Maestro splits, waits and resumes") + '</summary>' +
         '<div class="rich-table-wrap"><table class="rich-table mt-policy">' +
           '<thead><tr><th>' + ui("Decisão", "Decision") + '</th><th>' + ui("Regra aplicada", "Applied rule") + '</th></tr></thead>' +
