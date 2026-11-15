@@ -6127,7 +6127,7 @@ function esc(s) {
   document.addEventListener('pointerdown',function(ev){ if (!ev.target.closest('#stTip,.st-chip')) S.hideTip(); });
 
   /* ---- painel lateral ---- */
-  var panel, body, openKey = 'maestroStrategyOpen', turn = '', sig = '', thinkNext = false, pendingTurn = '', pendingChat = '';
+  var activeEl = null, swTimer = null, panel, body, openKey = 'maestroStrategyOpen', turn = '', sig = '', thinkNext = false, pendingTurn = '', pendingChat = '';
   function isOpen(){ return localStorage.getItem(openKey) !== '0'; }
   function current(){
     var st = window.__maestroState || {}, chat = st.currentChat; if (!chat) return null;
@@ -6135,37 +6135,49 @@ function esc(s) {
     if (job && job.status === 'running' && job.workflow && job.chat_id !== (chat.id)) job = null;
     var list = [];
     // Chave canónica = turn_id; sem ele, posição na lista ('i:N'), igual à que followScroll calcula.
-    (chat.messages || []).forEach(function(msg){ if (msg.plan && msg.plan.workflow && msg.plan.workflow.nodes) {
+    var lastUser = '';
+    (chat.messages || []).forEach(function(msg){ if (msg.role === 'user') lastUser = String(msg.text || '').replace(/\s+/g, ' ').trim();
+      if (msg.plan && msg.plan.workflow && msg.plan.workflow.nodes) {
       var k = msg.turn_id || msg.plan.workflow.turn_id || ('i:' + list.length);
-      list = list.filter(function(x){ return x[0] !== k; }); list.push([k, msg.plan.workflow]); } });
+      list = list.filter(function(x){ return x[0] !== k; }); list.push([k, msg.plan.workflow, 0, lastUser]); } });
     // O snapshot ao vivo substitui o gravado do mesmo pedido (por task_id ou turn_id).
     if (job && job.status === 'running' && job.chat_id === chat.id && job.workflow && job.workflow.nodes) {
       var key = job.task_id || job.workflow.turn_id || 'live';
       list = list.filter(function(x){ return x[0] !== key && x[0] !== job.workflow.turn_id; });
-      list.push([key, job.workflow, 1]);
+      list.push([key, job.workflow, 1, lastUser]);
     }
     if (!list.length) return null;
     var wanted = thinkNext && chat.id === pendingChat ? pendingTurn : turn;
     var pick = list.filter(function(x){ return x[0] === wanted || (wanted === 'live' && x[2]); })[0] || list[list.length - 1];
-    return S.fromWorkflow(pick[1], pick[0]);
+    var mm = S.fromWorkflow(pick[1], pick[0]); mm.label = pick[3] || ''; mm.n = list.indexOf(pick) + 1; mm.total = list.length; return mm;
   }
   function followScroll(){
     var sc = document.getElementById('chatScroll'); if (!sc) return;
-    var mid = sc.getBoundingClientRect(); mid = mid.top + mid.height * 0.5; var best = null, bd = 1e9;
+    var mid = sc.getBoundingClientRect(); mid = mid.top + mid.height * 0.5; var best = null, bd = 1e9, bestEl = null;
     var i = 0;
     sc.querySelectorAll('.wf-panel, .live-workflow').forEach(function(el){
       if (el.matches('.live-workflow') && !el.children.length) return;
       var idx = i++, r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
       if (d < bd){ var b = el.matches('[data-wf-turn]') ? el : el.querySelector('[data-wf-turn]'), t = b && b.getAttribute('data-wf-turn');
-        bd = d; best = t || (el.matches('.live-workflow') ? 'live' : 'i:' + idx); }
+        bd = d; bestEl = el; best = t || (el.matches('.live-workflow') ? 'live' : 'i:' + idx); }
     });
-    if (best && best !== turn){ turn = best; refresh(); }
+    activeEl = bestEl;
+    if (best && best !== turn){ turn = best; panel.classList.add('st-switching'); clearTimeout(swTimer); swTimer = setTimeout(function(){ panel.classList.remove('st-switching'); }, 450); refresh(); }
+    place();
+  }
+  // Prende o painel à posição do pedido: acompanha-o ao scroll e fica no topo quando ele sobe.
+  function place(){
+    if (!panel || !activeEl || !isOpen() || !wide()) return;
+    document.querySelectorAll('.st-linked').forEach(function(x){ if (x !== activeEl) x.classList.remove('st-linked'); });
+    activeEl.classList.add('st-linked');
+    var r = activeEl.getBoundingClientRect(), max = window.innerHeight - 16 - 160;
+    panel.style.top = Math.min(max, Math.max(70, r.top)) + 'px';
   }
   function refresh(){
     if (!panel) return;
     var insp = document.getElementById('inspectorRight'), ir = insp ? insp.getBoundingClientRect() : null;
     panel.style.right = ((ir && ir.width > 8) ? window.innerWidth - ir.left + 10 : 10) + 'px';
-    var open = isOpen(); panel.classList.toggle('closed', !open);
+    var open = isOpen(); panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
     document.body.classList.toggle('st-open', open && wide());
     var pane = document.getElementById('paneChat');
     var reserve = open && wide() && pane ? Math.max(0, pane.getBoundingClientRect().right - panel.getBoundingClientRect().left + 12) : 0;
@@ -6188,8 +6200,10 @@ function esc(s) {
     var evs = [];
     m.nodes.forEach(function(n){ if (n.started) evs.push([n.started, ui('Início · ','Started · ') + n.title]); if (n.finished) evs.push([n.finished, (LBL[n.status] || n.status) + ' · ' + n.title]); if (n.guided) evs.push([n.started || 0, n.guided + ui(' orientação(ões) · ',' guidance update(s) · ') + n.title]); });
     evs.sort(function(a, b){ return a[0] - b[0]; });
-    body.innerHTML = '<section class="st-think' + (highlight ? ' pulse' : '') + '" id="stThink"><h4>💭 ' + ui('Pensamento do orquestrador','Orchestrator thinking') + '</h4><p>' + e(reason(m)) + '</p></section>' +
+    body.innerHTML = '<button type="button" class="st-req" id="stReq" title="' + ui('Ir para este pedido','Go to this request') + '"><small>' + ui('Pedido ','Request ') + m.n + '/' + m.total + '</small><span>' + e((m.label || '').slice(0, 140) || ui('(sem texto)','(no text)')) + '</span></button><section class="st-think' + (highlight ? ' pulse' : '') + '" id="stThink"><h4>💭 ' + ui('Pensamento do orquestrador','Orchestrator thinking') + '</h4><p>' + e(reason(m)) + '</p></section>' +
       S.treeHTML(m) + (evs.length ? '<h4>' + ui('Decisões','Decisions') + '</h4><ol class="st-events">' + evs.slice(-12).map(function(x){ return '<li><time>' + (x[0] ? new Date(x[0] * 1000).toLocaleTimeString(ui('pt-PT','en-GB'), {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '') + '</time> ' + e(x[1]) + '</li>'; }).join('') + '</ol>' : '');
+    var rq = body.querySelector('#stReq'); if (rq) rq.onclick = function(){ if (activeEl) activeEl.scrollIntoView({block:'center', behavior:'smooth'}); };
+    body.classList.remove('st-swap'); void body.offsetWidth; body.classList.add('st-swap');
     S.drawEdges(body);
     if (highlight){ var t = document.getElementById('stThink'); if (t) t.scrollIntoView({block:'nearest'}); thinkNext = false; pendingTurn = ''; pendingChat = ''; }
   }
