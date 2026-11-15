@@ -742,30 +742,31 @@ def get_antigravity_status(force_refresh: bool = False) -> dict:
 
 
 def choose_active_maestro(force_substitute: bool = False) -> dict:
-    """
-    Seleciona quem assume o papel de Maestro:
-    1. Antigravity (agy) — Maestro Principal
-    2. Codex (gpt-6.1-sol) — 1.º Maestro Substituto (se janela 5h < 85%)
-    3. Claude Sonnet (cca @sonnet) — 2.º Maestro Substituto (se não estiver limitado)
-    4. DeepSeek CLI (dsh-term.sh / dsh headless) — 3.º Maestro Substituto (sempre disponível via API)
+    """Codex principal; Antigravity, Sonnet e DeepSeek como substitutos.
+
+    Uma estimativa histórica não confirma um bloqueio de quota. Os controlos
+    de orçamento da fila continuam a validar cada execução separadamente.
+    force_substitute ignora o principal e seleciona o primeiro substituto livre.
     """
     agy = get_antigravity_status()
     codex = get_codex_quota()
     claude = get_claude_quota()
-
-    if not force_substitute and agy["installed"] and not agy["limited"]:
-        return {
-            "engine": "agy",
-            "name": "Antigravity (Maestro Principal)",
-            "is_substitute": False,
-            "reason": "Ativo, autónomo e com quota disponível.",
-        }
-    if codex["five_hour_est_pct"] < 85 and not codex.get("pace_blocked", True):
+    live_blocked = codex.get("source") == "wham_live" and (
+        (codex.get("pace_blocked") is True and codex.get("pace_status") != "desconhecido")
+        or codex.get("limit_reached") is True)
+    if not force_substitute and codex["five_hour_est_pct"] < 85 and not live_blocked:
         return {
             "engine": "codex",
-            "name": "Codex CLI (Maestro Substituto #1)",
+            "name": "Codex CLI (Maestro Principal)",
+            "is_substitute": False,
+            "reason": "Codex é o Maestro principal; sem bloqueio confirmado de quota.",
+        }
+    if agy["installed"] and not agy["limited"]:
+        return {
+            "engine": "agy",
+            "name": "Antigravity (Maestro Substituto #1)",
             "is_substitute": True,
-            "reason": f"Antigravity indisponível; Codex com janela 5h livre (~{codex['five_hour_est_pct']}%).",
+            "reason": "Codex indisponível ou substituição forçada; Antigravity assume o comando.",
         }
     if claude["pace_status"] != "limitado" and claude["five_hour_pct"] < 85:
         return {

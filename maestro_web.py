@@ -1783,12 +1783,14 @@ def chat_subtasks(chat):
         if wf:
             # Missão concluída (todos os passos done) já não polui a barra lateral.
             if any(n.get('status') != 'done' for n in wf.get('nodes', [])):
-                workflows.append((message.get('turn_id'), wf))
+                workflows.append((message.get('turn_id') or wf.get('turn_id'), wf))
             break
     with JOBS_LOCK:
         for job in ACTIVE_JOBS.values():
             if job.get('chat_id') == chat['id'] and job.get('status') == 'running' and job.get('workflow'):
-                workflows.append((job.get('task_id'), copy.deepcopy(job['workflow'])))
+                turn_id = job.get('task_id') or job['workflow'].get('turn_id')
+                workflows = [(tid, wf) for tid, wf in workflows if tid != turn_id]
+                workflows.append((turn_id, copy.deepcopy(job['workflow'])))
     result = {}
     for turn_id, wf in workflows:
         if not turn_id:

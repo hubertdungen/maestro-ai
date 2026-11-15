@@ -1626,6 +1626,7 @@ function esc(s) {
         '<div class="live-work-head" tabindex="0">' +
           '<div class="live-work-status">' +
             '<span class="typing-dots"><span></span><span></span><span></span></span>' +
+            '<span class="request-status live-request-status" data-status="running">' + ui('a correr', 'running') + '</span>' +
             '<span class="step-txt"></span>' +
           '</div>' +
           '<span class="live-work-timer"></span>' +
@@ -1714,6 +1715,8 @@ function esc(s) {
       bubble.style.minHeight = (composerHasFocus() || (box && box.__follow === false)) ? bubble.getBoundingClientRect().height + "px" : "";
     }
     var waiting = j.status === "queued";
+    var badge = el.querySelector('.live-request-status');
+    if (badge) { badge.dataset.status = waiting ? 'waiting' : 'running'; badge.textContent = waiting ? ui('em espera', 'waiting') : ui('a correr', 'running'); }
     var txt = el.querySelector(".step-txt");
     if (txt) txt.textContent = statusText(j.current_step || "🧠 A orquestrar…");
     var timer = el.querySelector(".live-work-timer");
@@ -2193,13 +2196,20 @@ function esc(s) {
       if (m.role !== 'user' || !_turnCache[idx]) return;
       var queued = state.messageQueue.find(function(t){ return t.id === m.turn_id; });
       var active = state.activeJob && state.activeJob.status === 'running' && state.activeJob.task_id === m.turn_id;
-      var label = queued ? (queued.status === 'interrupted' ? queueReason(queued) : ui('Em fila', 'Queued') + ' · ' + queueReason(queued)) : active ? ui('Em execução', 'Running') : '';
+      var requestState = active ? 'running' : queued ? (queued.status === 'interrupted' ? 'interrupted' : 'waiting') : '';
+      var label = active ? ui('a correr', 'running') : queued ? (queued.status === 'interrupted' ? ui('interrompido', 'interrupted') : ui('em espera', 'waiting')) : '';
       var admission = m.admission || {};
       var details = [admission.engine, admission.model_id].filter(Boolean).join(' · ');
       if (admission.reason === 'parallel') details += ui(' · Execução em paralelo', ' · Parallel execution');
       if (admission.reason === 'essential_reserve') details += ui(' · Reserva essencial: incidente crítico sem alternativa compatível', ' · Essential reserve: critical incident without a compatible alternative');
       if (admission.reason === 'economy') details += ui(' · Escolha por economia', ' · Economy choice');
-      _turnCache[idx].el.querySelector('.turn-foot').textContent = ui('Tu', 'You') + (label ? ' · ' + label : '') + (details ? ' · ' + details : '');
+      var foot = _turnCache[idx].el.querySelector('.turn-foot');
+      var status = foot.querySelector('.request-meta');
+      if (!status) {
+        Array.from(foot.childNodes).forEach(function(n){ if (n.nodeType === 3) n.remove(); });
+        status = document.createElement('span'); status.className = 'request-meta'; foot.prepend(status);
+      }
+      status.innerHTML = esc(ui('Tu', 'You')) + (label ? ' <span class="request-status" data-status="' + requestState + '">' + esc(label) + '</span>' : '') + (queued ? ' · ' + esc(queueReason(queued)) : '') + (details ? ' · ' + esc(details) : '');
     });
 
     // 4) Turno ao vivo (atualizado em sítio).
@@ -3415,11 +3425,11 @@ function esc(s) {
       (when ? '<span>· ' + esc(when) + '</span>' : '') + '</div>';
     if(c.subtasks && c.subtasks.length){
       var children=document.createElement('div');children.className='wf-subchats';
-      var chip=document.createElement('button');chip.type='button';chip.className='st-chip';chip.setAttribute('aria-label','Estratégia do pedido');
+      var chip=document.createElement('button');chip.type='button';chip.className='st-chip';chip.setAttribute('aria-label',ui('Estratégia do pedido: ', 'Request strategy: ')+window.maestroStrategy.summary(c.subtasks));
       chip.innerHTML='🧭 <span>'+esc(window.maestroStrategy.summary(c.subtasks))+'</span>';
       var model=function(){return window.maestroStrategy.fromSubtasks(c.subtasks);};
-      children.onmouseenter=function(){window.maestroStrategy.showTip(children,model());};children.onmouseleave=window.maestroStrategy.hideTip;
-      chip.onclick=function(ev){window.maestroStrategy.point();if(window.innerWidth<=1080){ev.stopPropagation();window.maestroStrategy.showTip(children,model());}};
+      children.addEventListener('pointerenter',function(ev){if(ev.pointerType==='mouse')window.maestroStrategy.showTip(children,model());});children.addEventListener('pointerleave',window.maestroStrategy.hideTip);
+      chip.onclick=function(ev){window.maestroStrategy.point(c.subtasks[0].turn_id,c.id);if(window.innerWidth<=1080){ev.stopPropagation();window.maestroStrategy.showTip(children,model(),true);}};
       children.appendChild(chip);
       c.subtasks.forEach(function(task){
         var button=document.createElement('button');button.type='button';button.title=task.engine+' · '+task.status;
@@ -3508,6 +3518,7 @@ function esc(s) {
     return row;
   }
   function renderChatList() {
+    if (window.maestroStrategy) window.maestroStrategy.hideTip();
     var box = document.getElementById("chatList");
     var q = state.search.toLowerCase();
     var fmap = {};
@@ -3924,7 +3935,7 @@ function esc(s) {
     box.innerHTML = state.messageQueue.length ? '<button type="button" class="queue-strip-head queue-fold" aria-label="' + ui('Recolher/expandir fila', 'Fold/unfold queue') + '">' + dualIco('queue','📥') + ' <span>' + ui('FILA MAESTRO', 'MAESTRO QUEUE') + ' · ' + state.messageQueue.length + '</span><span class="queue-chev" aria-hidden="true">⌃</span></button>' +
       state.messageQueue.map(function(item, idx){
         return '<div class="queue-item" data-qid="' + esc(item.id) + '" title="' + esc(queueTip(item, idx)) + '"><button type="button" class="queue-grip" aria-label="' + ui('Arrastar para reordenar. Teclas ↑ e ↓ para mover.', 'Drag to reorder. Use ↑ and ↓ to move.') + '" title="' + ui('Arrastar para reordenar · ↑ ↓', 'Drag to reorder · ↑ ↓') + '">⠿</button><span class="queue-item-txt"><b>#' + (idx+1) + '</b> ' + esc(item.text || ui("Anexo", "Attachment")) +
-          '<br><small>' + esc(queueReason(item)) + '</small></span><div class="queue-item-acts">' +
+          ' <span class="request-status" data-status="' + (item.status === 'interrupted' ? 'interrupted' : 'waiting') + '">' + (item.status === 'interrupted' ? ui('interrompido', 'interrupted') : ui('em espera', 'waiting')) + '</span><br><small>' + esc(queueReason(item)) + '</small></span><div class="queue-item-acts">' +
           (item.status === 'interrupted' ? '<button type="button" data-qretry="' + esc(item.id) + '">▶</button>' : '') +
           (item.status === 'queued' && item.conflict && !item.force && ['dependency','engine_busy'].indexOf(item.reason) !== -1 ? '<button type="button" class="qforce qforce-' + esc(item.conflict) + '" data-qforce="' + esc(item.id) + '" title="' + ui('Avançar mesmo assim (risco: ' + item.conflict + ')', 'Run anyway (risk: ' + item.conflict + ')') + '">' + dualIco('bolt','⚡') + ' ' + ui('Avançar', 'Go') + '</button>' : '') +
           '<button type="button" class="qedit" data-qedit="' + esc(item.id) + '" aria-label="' + ui('Editar pedido', 'Edit request') + '" title="' + ui('Editar pedido', 'Edit request') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20H4v-8M15 4l5 5M8 16l2-6L18 2l4 4-8 8z"/></svg></button>' +
@@ -5965,7 +5976,10 @@ function esc(s) {
 /* ---- ESTRATÉGIA: árvore animada, painel lateral (PC) e apontador na lista ---- */
 (function(){
   var S = window.maestroStrategy = {};
-  var LBL = {pending:'A aguardar',running:'A executar',done:'Concluído',failed:'Falhou',blocked:'Bloqueado',cancelled:'Cancelado',interrupted:'Interrompido'};
+  function ui(pt,en){ return (window.__maestroState || {}).lang === 'en' ? en : pt; }
+  function labels(){ return {pending:ui('A aguardar','Pending'),running:ui('A executar','Running'),done:ui('Concluído','Done'),failed:ui('Falhou','Failed'),blocked:ui('Bloqueado','Blocked'),cancelled:ui('Cancelado','Cancelled'),interrupted:ui('Interrompido','Interrupted')}; }
+  function localReason(source){ return source === 'local_feedback' || source === 'local_capability'; }
+  function reason(m){ return localReason(m.source) ? ui('Plano local: um só passo, sem consultar o coordenador.','Local plan: one step, without consulting the coordinator.') : (m.reason || ui('Sem justificação guardada para este plano.','No explanation saved for this plan.')); }
   var ICO = {pending:'○',running:'◉',done:'✓',failed:'✕',blocked:'⛔',cancelled:'—',interrupted:'⏸'};
   function e(v){ return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function clip(s, n){ s = String(s || '').replace(/\s+/g,' ').trim(); return s.length > n ? s.slice(0, n-1) + '…' : s; }
@@ -5974,37 +5988,38 @@ function esc(s) {
   // Modelo único: vem de um workflow completo ou do resumo (c.subtasks) da lista.
   S.fromWorkflow = function(wf, turn){
     var coord = wf.coordinator && typeof wf.coordinator === 'object' ? (wf.coordinator.label || wf.coordinator.name || '') : (wf.coordinator || '');
-    return {turn: turn || wf.turn_id || '', coord: coord || 'Orquestrador', reason: wf.reason || '', source: wf.planning_source || '', created: wf.created_at, status: wf.status,
-      nodes: (wf.nodes || []).map(function(n){ var r = n.result || {};
+    return {turn: turn || wf.turn_id || '', coord: coord || ui('Orquestrador','Orchestrator'), reason: localReason(wf.planning_source) ? '' : (wf.reason || ''), source: wf.planning_source || '', created: wf.created_at, status: wf.status,
+      nodes: (wf.nodes || []).filter(function(n, i, a){ return a.findIndex(function(x){ return x.id === n.id; }) === i; }).map(function(n){ var r = n.result || {};
         return {id:n.id, title:n.title || n.id, status:n.status || 'pending', engine:r.agent_used || n.actual_agent || n.engine || '', model:n.model_id || r.model_id || '',
           role:n.role, deps:n.depends_on || [], note:n.error || n.reason || '', text:typeof r === 'string' ? r : (r.text || ''), started:n.started_at, finished:n.finished_at, guided:(n.guidance || []).length}; })};
   };
   S.fromSubtasks = function(tasks){
-    return {turn:'', coord:'Orquestrador', reason:'', source:'', nodes:(tasks || []).map(function(t){
+    return {turn:'', coord:ui('Orquestrador','Orchestrator'), reason:'', source:'', nodes:(tasks || []).map(function(t){
       return {id:t.node_id, title:t.title, status:t.status, engine:t.engine, model:t.model, role:t.role, deps:t.deps || [], note:'', text:''}; })};
   };
 
   S.summary = function(tasks){
     var n = (tasks || []).length, d = (tasks || []).filter(function(t){ return t.status === 'done'; }).length;
     var run = (tasks || []).filter(function(t){ return t.status === 'running'; })[0];
-    return d + '/' + n + (run ? ' · a executar: ' + clip(run.title, 28) : '');
+    return d + '/' + n + (run ? ui(' · a executar: ',' · running: ') + clip(run.title, 28) : '');
   };
 
   S.treeHTML = function(m){
-    var by = {}, depth = {};
+    var by = {}, depth = {}, LBL = labels();
+    var sources = {coordinator:ui('do coordenador','from coordinator'),rules:ui('local','local'),local_feedback:ui('local','local'),local_capability:ui('local','local'),fallback:ui('de reserva','fallback')};
     m.nodes.forEach(function(n){ by[n.id] = n; });
     function dp(n, seen){ if (depth[n.id] != null) return depth[n.id]; if (seen[n.id]) return 0; seen[n.id] = 1;
       var d = 0; n.deps.forEach(function(x){ if (by[x]) d = Math.max(d, dp(by[x], seen) + 1); }); return depth[n.id] = d; }
     var rows = [];
     m.nodes.forEach(function(n){ (rows[dp(n, {})] = rows[dp(n, {})] || []).push(n); });
     var rootState = m.nodes.some(function(n){ return n.status === 'running'; }) ? 'running' : (m.nodes.length && m.nodes.every(function(n){ return n.status === 'done'; }) ? 'done' : 'pending');
-    var h = '<div class="st-tree" data-edges="' + e(JSON.stringify(m.nodes.map(function(n){ return [n.id, n.deps, n.status]; }))) + '">' +
-      '<div class="st-row"><div class="st-node st-root" data-id="__root" data-status="' + rootState + '"><b>' + window.maestroRoleTag('maestro') + ' ' + e(m.coord) + '</b><small>' + window.maestroRoleTag('planner') + ' · Orquestrador' + (m.source ? ' · plano ' + e(m.source === 'coordinator' ? 'do coordenador' : 'de reserva') : '') + '</small></div></div>';
+    var h = '<div class="st-tree"' + (rootState === 'done' ? ' data-done="1"' : '') + ' data-edges="' + e(JSON.stringify(m.nodes.map(function(n){ return [n.id, n.deps, n.status]; }))) + '">' +
+      '<div class="st-row"><div class="st-node st-root" data-id="__root" data-status="' + rootState + '"><b>' + window.maestroRoleTag('maestro') + ' ' + e(m.coord) + '</b><small>' + window.maestroRoleTag('planner') + ' · ' + ui('Orquestrador','Orchestrator') + (m.source ? ui(' · plano ',' · plan ') + e(sources[m.source] || m.source) : '') + '</small></div></div>';
     rows.forEach(function(row){
       h += '<div class="st-row">' + (row || []).map(function(n){
         var tag = window.mtag ? window.mtag(n.engine, n.model) : '';
         var decision = clip(n.note || n.text, 150);
-        return '<div class="st-node" tabindex="0" data-id="' + e(n.id) + '" data-status="' + e(n.status) + '"><span class="st-title"><i>' + (ICO[n.status] || '○') + '</i>' + e(n.title) + '</span>' +
+        return '<div class="st-node" data-id="' + e(n.id) + '" data-status="' + e(n.status) + '"><span class="st-title"><i>' + (ICO[n.status] || '○') + '</i>' + e(n.title) + '</span>' +
           '<small>' + window.maestroRoleTag(n.role) + ' ' + e(LBL[n.status] || n.status) + (n.engine ? ' · ' + e(clip(n.engine, 24)) : '') + ' ' + tag + '</small>' +
           (decision ? '<small class="st-decision">' + e(decision) + '</small>' : '') + '</div>';
       }).join('') + '</div>';
@@ -6038,39 +6053,52 @@ function esc(s) {
   /* ---- hover (lista de pedidos) ---- */
   var tip = null, tipTimer = null;
   function ensureTip(){ if (tip) return tip; tip = document.createElement('div'); tip.id = 'stTip'; tip.hidden = true;
-    tip.addEventListener('mouseenter', function(){ clearTimeout(tipTimer); }); tip.addEventListener('mouseleave', S.hideTip); document.body.appendChild(tip); return tip; }
-  S.showTip = function(anchor, m){
-    clearTimeout(tipTimer); var t = ensureTip();
-    t.innerHTML = '<div class="st-tip-head">Estratégia do pedido</div>' + (wide() ? S.treeHTML(m) : listHTML(m)); t.hidden = false;
-    var r = anchor.getBoundingClientRect(), w = Math.min(380, window.innerWidth - 16);
-    t.style.width = w + 'px'; t.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
-    var below = r.bottom + 6; t.style.top = below + 'px';
-    var h = t.getBoundingClientRect().height; if (below + h > window.innerHeight - 8) t.style.top = Math.max(8, r.top - h - 6) + 'px';
-    S.drawEdges(t);
+    document.body.appendChild(tip); return tip; }
+  S.showTip = function(anchor, m, immediate){
+    S.hideTip();
+    function show(){
+      if (!anchor.isConnected) return;
+      var t = ensureTip();
+      t.innerHTML = '<div class="st-tip-head">' + ui('Estratégia do pedido','Request strategy') + '</div>' + (wide() ? S.treeHTML(m) : listHTML(m)); t.hidden = false;
+      var r = anchor.getBoundingClientRect(), w = Math.min(380, window.innerWidth - 16);
+      t.style.width = w + 'px'; t.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+      var below = r.bottom + 6; t.style.top = below + 'px';
+      var h = t.getBoundingClientRect().height; if (below + h > window.innerHeight - 8) t.style.top = Math.max(8, r.top - h - 6) + 'px';
+      S.drawEdges(t);
+    }
+    if (immediate) show(); else tipTimer = setTimeout(show, 300);
   };
-  S.hideTip = function(){ clearTimeout(tipTimer); tipTimer = setTimeout(function(){ if (tip) tip.hidden = true; }, 180); };
+  S.hideTip = function(){ clearTimeout(tipTimer); tipTimer = null; if (tip) tip.hidden = true; };
+  document.addEventListener('keydown',function(ev){ if (ev.key === 'Escape') S.hideTip(); });
+  document.addEventListener('pointerdown',function(ev){ if (!ev.target.closest('#stTip,.st-chip')) S.hideTip(); });
 
   /* ---- painel lateral ---- */
-  var panel, body, openKey = 'maestroStrategyOpen', turn = '', sig = '', thinkNext = false;
+  var panel, body, openKey = 'maestroStrategyOpen', turn = '', sig = '', thinkNext = false, pendingTurn = '', pendingChat = '';
   function isOpen(){ return localStorage.getItem(openKey) !== '0'; }
   function current(){
     var st = window.__maestroState || {}, chat = st.currentChat; if (!chat) return null;
     var job = st.activeJob;
     if (job && job.status === 'running' && job.workflow && job.chat_id !== (chat.id)) job = null;
     var list = [];
-    (chat.messages || []).forEach(function(msg){ if (msg.plan && msg.plan.workflow && msg.plan.workflow.nodes) list.push([msg.turn_id || '', msg.plan.workflow]); });
-    if (job && job.status === 'running' && job.workflow && job.workflow.nodes) list.push([job.task_id || 'live', job.workflow]);
+    (chat.messages || []).forEach(function(msg){ if (msg.plan && msg.plan.workflow && msg.plan.workflow.nodes) list.push([msg.turn_id || msg.plan.workflow.turn_id || '', msg.plan.workflow]); });
+    // The live snapshot replaces the saved snapshot for the same request.
+    if (job && job.status === 'running' && job.chat_id === chat.id && job.workflow && job.workflow.nodes) {
+      var key = job.task_id || job.workflow.turn_id || 'live';
+      list = list.filter(function(x){ return x[0] !== key; });
+      list.push([key, job.workflow, 1]);
+    }
     if (!list.length) return null;
-    var pick = list.filter(function(x){ return x[0] === turn; })[0] || list[list.length - 1];
+    var wanted = thinkNext && chat.id === pendingChat ? pendingTurn : turn;
+    var pick = list.filter(function(x){ return x[0] === wanted || (wanted === 'live' && x[2]); })[0] || list[list.length - 1];
     return S.fromWorkflow(pick[1], pick[0]);
   }
   function followScroll(){
     var sc = document.getElementById('chatScroll'); if (!sc) return;
-    var mid = sc.getBoundingClientRect(); mid = mid.top + mid.height * 0.5, best = null, bd = 1e9;
+    var mid = sc.getBoundingClientRect(); mid = mid.top + mid.height * 0.5; var best = null, bd = 1e9;
     sc.querySelectorAll('.wf-panel, .live-workflow').forEach(function(el){
       var r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
       if (el.matches('.live-workflow') && !el.children.length) return;
-      if (d < bd){ var b = el.querySelector('[data-wf-turn]'); bd = d; best = el.matches('.live-workflow') ? 'live' : (b ? b.getAttribute('data-wf-turn') : ''); }
+      if (d < bd){ var b = el.matches('[data-wf-turn]') ? el : el.querySelector('[data-wf-turn]'); bd = d; best = el.matches('.live-workflow') ? 'live' : (b ? b.getAttribute('data-wf-turn') : ''); }
     });
     if (best && best !== turn){ turn = best; refresh(); }
   }
@@ -6079,30 +6107,46 @@ function esc(s) {
     var insp = document.getElementById('inspectorRight'), ir = insp ? insp.getBoundingClientRect() : null;
     panel.style.right = ((ir && ir.width > 8) ? window.innerWidth - ir.left + 10 : 10) + 'px';
     var open = isOpen(); panel.classList.toggle('closed', !open);
+    document.body.classList.toggle('st-open', open && wide());
+    var pane = document.getElementById('paneChat');
+    var reserve = open && wide() && pane ? Math.max(0, pane.getBoundingClientRect().right - panel.getBoundingClientRect().left + 12) : 0;
+    document.body.style.setProperty('--st-w', reserve + 'px');
+    panel.setAttribute('aria-label', ui('Estratégia do pedido','Request strategy'));
+    var toggle = panel.querySelector('#stToggle');
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', ui('Mostrar ou ocultar a estratégia','Show or hide strategy'));
+    toggle.title = ui('Estratégia','Strategy');
+    panel.querySelector('header strong').textContent = ui('Estratégia','Strategy');
+    panel.querySelector('#stClose').setAttribute('aria-label', ui('Fechar','Close'));
     window.dispatchEvent(new Event('strategyvisibilitychange'));
     var m = open ? current() : null;
-    if (m && m.turn === 'live') m.turn = '';
-    var s = open ? JSON.stringify([m, thinkNext]) + panel.style.right : 'x';
+    var highlight = thinkNext && m && m.turn === pendingTurn && (window.__maestroState || {}).currentChat.id === pendingChat;
+    if (highlight) turn = pendingTurn;
+    var LBL = labels();
+    var s = open ? JSON.stringify([m, highlight, ui('pt','en')]) + panel.style.right : 'x';
     if (s === sig) return; sig = s;
-    if (!m){ body.innerHTML = '<p class="st-empty">Sem plano multiagente neste pedido. Quando o Maestro dividir o trabalho, a árvore aparece aqui.</p>'; return; }
+    if (!m){ body.innerHTML = '<p class="st-empty">' + ui('Sem plano multiagente neste pedido. Quando o Maestro dividir o trabalho, a árvore aparece aqui.','No multi-agent plan for this request. The tree appears here when Maestro splits the work.') + '</p>'; return; }
     var evs = [];
-    m.nodes.forEach(function(n){ if (n.started) evs.push([n.started, 'Início · ' + n.title]); if (n.finished) evs.push([n.finished, (LBL[n.status] || n.status) + ' · ' + n.title]); if (n.guided) evs.push([n.started || 0, n.guided + ' orientação(ões) · ' + n.title]); });
+    m.nodes.forEach(function(n){ if (n.started) evs.push([n.started, ui('Início · ','Started · ') + n.title]); if (n.finished) evs.push([n.finished, (LBL[n.status] || n.status) + ' · ' + n.title]); if (n.guided) evs.push([n.started || 0, n.guided + ui(' orientação(ões) · ',' guidance update(s) · ') + n.title]); });
     evs.sort(function(a, b){ return a[0] - b[0]; });
-    body.innerHTML = '<section class="st-think' + (thinkNext ? ' pulse' : '') + '" id="stThink"><h4>💭 Pensamento do orquestrador</h4><p>' + e(m.reason || 'Sem justificação guardada para este plano.') + '</p></section>' +
-      S.treeHTML(m) + (evs.length ? '<h4>Decisões</h4><ol class="st-events">' + evs.slice(-12).map(function(x){ return '<li><time>' + (x[0] ? new Date(x[0] * 1000).toLocaleTimeString('pt-PT', {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '') + '</time> ' + e(x[1]) + '</li>'; }).join('') + '</ol>' : '');
+    body.innerHTML = '<section class="st-think' + (highlight ? ' pulse' : '') + '" id="stThink"><h4>💭 ' + ui('Pensamento do orquestrador','Orchestrator thinking') + '</h4><p>' + e(reason(m)) + '</p></section>' +
+      S.treeHTML(m) + (evs.length ? '<h4>' + ui('Decisões','Decisions') + '</h4><ol class="st-events">' + evs.slice(-12).map(function(x){ return '<li><time>' + (x[0] ? new Date(x[0] * 1000).toLocaleTimeString(ui('pt-PT','en-GB'), {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '') + '</time> ' + e(x[1]) + '</li>'; }).join('') + '</ol>' : '');
     S.drawEdges(body);
-    if (thinkNext){ var t = document.getElementById('stThink'); if (t) t.scrollIntoView({block:'nearest'}); thinkNext = false; }
+    if (highlight){ var t = document.getElementById('stThink'); if (t) t.scrollIntoView({block:'nearest'}); thinkNext = false; pendingTurn = ''; pendingChat = ''; }
   }
   S.open = function(thinking){ localStorage.setItem(openKey, '1'); thinkNext = !!thinking; sig = ''; refresh(); };
   // Apontador: abre o pensamento do orquestrador desse pedido (o chat abre pelo clique da linha).
-  S.point = function(){ if (wide()) S.open(true); };
+  S.point = function(requestTurn, chatId){ if (wide()){ pendingTurn = requestTurn || ''; pendingChat = chatId; S.open(true); } };
 
   function build(){
-    panel = document.createElement('aside'); panel.id = 'stPanel'; panel.setAttribute('aria-label', 'Estratégia do pedido');
-    panel.innerHTML = '<button type="button" class="st-toggle" id="stToggle" aria-label="Mostrar ou ocultar a estratégia" title="Estratégia">🧭</button>' +
-      '<div class="st-main"><header><strong>Estratégia</strong><button type="button" class="st-close" id="stClose" aria-label="Fechar">✕</button></header><div class="st-body" id="stBody"></div></div>';
+    panel = document.createElement('aside'); panel.id = 'stPanel'; panel.setAttribute('aria-label', ui('Estratégia do pedido','Request strategy'));
+    panel.innerHTML = '<button type="button" class="st-toggle" id="stToggle" aria-controls="stBody" aria-expanded="false" aria-label="' + ui('Mostrar ou ocultar a estratégia','Show or hide strategy') + '" title="' + ui('Estratégia','Strategy') + '">🧭</button>' +
+      '<div class="st-main"><header><strong>' + ui('Estratégia','Strategy') + '</strong><button type="button" class="st-close" id="stClose" aria-label="' + ui('Fechar','Close') + '">✕</button></header><div class="st-body" id="stBody"></div></div>';
     document.body.appendChild(panel); body = panel.querySelector('#stBody');
-    panel.querySelector('#stClose').onclick = function(){ localStorage.setItem(openKey, '0'); refresh(); };
+    function close(){ localStorage.setItem(openKey, '0'); thinkNext = false; refresh(); panel.querySelector('#stToggle').focus(); }
+    panel.querySelector('#stClose').onclick = close;
+    panel.addEventListener('keydown',function(ev){ if(ev.key === 'Escape'){ ev.preventDefault(); close(); } });
+    if (window.ResizeObserver){ new ResizeObserver(function(){ refresh(); }).observe(document.getElementById('paneChat')); }
     panel.querySelector('#stToggle').onclick = function(){ if (isOpen()) localStorage.setItem(openKey, '0'); else localStorage.setItem(openKey, '1'); sig = ''; refresh(); };
     var sc = document.getElementById('chatScroll'); if (sc) sc.addEventListener('scroll', followScroll, {passive:true});
     window.addEventListener('resize', function(){ sig = ''; refresh(); });
