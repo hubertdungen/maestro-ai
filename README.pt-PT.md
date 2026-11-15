@@ -17,6 +17,12 @@
 
 Os detalhes do desenho estão em [ORCHESTRATION.md](ORCHESTRATION.md) e o modelo de custos em [DEEPSEEK_PRICING.md](DEEPSEEK_PRICING.md).
 
+## Capturas de ecrã
+
+<p align="center"><img src="docs/screenshots/maestro-desktop.jpg" width="620" alt="Maestro AI desktop"/> <img src="docs/screenshots/maestro-tablet.jpg" width="190" alt="Maestro AI tablet"/> <img src="docs/screenshots/maestro-mobile.jpg" width="130" alt="Maestro AI phone"/></p>
+
+*Computador (browser ou janela da app Windows) · tablet (PWA) · telemóvel (PWA). Espaço de demonstração com conversas fictícias.*
+
 ## Requisitos
 
 - Linux (desenvolvido num NAS doméstico), Python 3.11+

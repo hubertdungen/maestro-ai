@@ -17,6 +17,12 @@
 
 See [ORCHESTRATION.md](ORCHESTRATION.md) (in Portuguese) for the design details and [DEEPSEEK_PRICING.md](DEEPSEEK_PRICING.md) for the cost model.
 
+## Screenshots
+
+<p align="center"><img src="docs/screenshots/maestro-desktop.jpg" width="620" alt="Maestro AI desktop"/> <img src="docs/screenshots/maestro-tablet.jpg" width="190" alt="Maestro AI tablet"/> <img src="docs/screenshots/maestro-mobile.jpg" width="130" alt="Maestro AI phone"/></p>
+
+*Desktop (browser or Windows app window) · tablet (PWA) · phone (PWA). Demo workspace with fictional conversations.*
+
 ## Requirements
 
 - Linux (developed on a home NAS), Python 3.11+
