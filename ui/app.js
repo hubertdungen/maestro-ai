@@ -4169,7 +4169,10 @@ function esc(s) {
       }
     } else {
       if (btnSend) btnSend.disabled = false;
-      if (state.busyMode === "queue") {
+      if (state.busyMode === "append") {
+        setModeText(btnSend, "append", dualIco("queue","📎") + " " + ui("Juntar à anterior ↵", "Add to previous ↵"));
+        setAlt("append", dualIco("queue","📥") + " " + ui("Meter em Fila", "Queue message"));
+      } else if (state.busyMode === "queue") {
         setModeText(btnSend, "queue", dualIco("queue","📥") + " " + ui("Meter em Fila ↵", "Queue message ↵"));
         setAlt("queue", dualIco("steer","🧭") + " " + ui("Orientar já", "Steer now"));
       } else {
@@ -4193,7 +4196,7 @@ function esc(s) {
 
   if (btnAltBusy) {
     btnAltBusy.onclick = function(){
-      var oppositeMode = (state.busyMode === "queue") ? "steer" : "queue";
+      var oppositeMode = (state.busyMode === "steer") ? "queue" : state.busyMode === "append" ? "queue" : "steer";
       handleComposerSubmit(oppositeMode);
     };
   }
@@ -4455,7 +4458,17 @@ function esc(s) {
 
     if (isCurrentChatBusy()) {
       var modeToUse = overrideBusyMode || state.busyMode || "queue";
-      if (modeToUse === "queue") {
+      if (modeToUse === "append" && !imgs.length && !docs.length && state.currentChat) {
+        var last = (state.messageQueue || []).filter(function(t){ return t.status === 'queued'; }).pop();
+        if (last) {
+          var cidA = state.currentChat.id;
+          api('/api/chat/queue/edit', {id: cidA, task_id: last.id, text: (last.text || '') + '\n\n' + txt, expected_text: last.text}).then(function(res){
+            if (state.currentChat && state.currentChat.id === cidA) { receiveQueue(res); refreshQueue(); }
+          }).catch(function(){ dispatchChatTurn(txt, imgs, proj, eng, false, docs); });
+          return;
+        }
+      }
+      if (modeToUse !== "steer") {
         dispatchChatTurn(txt, imgs, proj, eng, false, docs);
         return;
       } else {
@@ -5788,8 +5801,8 @@ function esc(s) {
   // Compact controls share the existing engine and busy-mode state.
   function composerSendTip(alternative) {
     var busy = isCurrentChatBusy();
-    var mode = alternative ? (state.busyMode === 'queue' ? 'steer' : 'queue') : state.busyMode;
-    var action = !busy ? ui('Enviar pedido', 'Send request') : mode === 'steer' ? ui('Orientar agora', 'Steer now') : ui('Meter em fila', 'Queue message');
+    var mode = alternative ? (state.busyMode === 'steer' || state.busyMode === 'append' ? 'queue' : 'steer') : state.busyMode;
+    var action = !busy ? ui('Enviar pedido', 'Send request') : mode === 'steer' ? ui('Orientar agora', 'Steer now') : mode === 'append' ? ui('Juntar à anterior', 'Add to previous') : ui('Meter em fila', 'Queue message');
     var keys = window.innerWidth > 760
       ? ui('Enter: envia · Shift+Enter: nova linha · Ctrl+Enter / ⌘+Enter: envia.', 'Enter: send · Shift+Enter: new line · Ctrl+Enter / ⌘+Enter: send.')
       : ui('Enter: nova linha · Shift+Enter: nova linha · Ctrl+Enter / ⌘+Enter: envia.', 'Enter: new line · Shift+Enter: new line · Ctrl+Enter / ⌘+Enter: send.');
@@ -5804,7 +5817,7 @@ function esc(s) {
     var label = (names[engine] || engine) + (config.effort ? ' · ' + config.effort : '');
     if (engineButton.dataset.label !== label) { engineButton.textContent = label + ' ⌄'; engineButton.dataset.label = label; }
     engineButton.setAttribute('data-tip', ui('Motor e esforço|Escolhe quem executa o próximo pedido e o esforço de raciocínio.', 'Engine and effort|Choose who runs the next request and the reasoning effort.'));
-    document.getElementById('btnComposerMode').textContent = (state.busyMode === 'steer' ? ui('Orientar', 'Steer') : ui('Fila', 'Queue')) + ' ⌄';
+    document.getElementById('btnComposerMode').textContent = (state.busyMode === 'steer' ? ui('Orientar', 'Steer') : state.busyMode === 'append' ? ui('Juntar', 'Append') : ui('Fila', 'Queue')) + ' ⌄';
     document.getElementById('btnComposerMode').setAttribute('data-tip', ui('Durante a execução|Escolhe entre guardar o próximo pedido na fila ou orientar a tarefa em curso. Não altera permissões.', 'While running|Choose whether to queue the next request or steer the running task. Does not change permissions.'));
     document.getElementById('btnSend').setAttribute('aria-description', composerSendTip(false).replace('|', '. '));
     document.getElementById('btnSend').setAttribute('aria-keyshortcuts', 'Control+Enter Meta+Enter' + (window.innerWidth > 760 ? ' Enter' : ''));
@@ -5886,7 +5899,7 @@ function esc(s) {
       var more=document.createElement('button');more.type='button';more.className='composer-panel-action';more.textContent=ui('Modelo e esforço…','Model and effort…');
       more.onclick=function(){closeComposerPanels(false);var b=document.getElementById('wfModelButton');if(b)b.click();};panel.appendChild(more);
     } else {
-      [['queue',ui('Meter em fila','Queue message'),ui('Guarda o pedido; o Maestro agenda quando puder executar.','Saves the request; Maestro schedules it when execution is possible.')],['steer',ui('Orientar agora','Steer now'),ui('Envia instruções adicionais à tarefa em curso.','Sends additional instructions to the running task.')]].forEach(function(row){panel.appendChild(composerChoice(row[1],row[2],state.busyMode===row[0],function(){setBusyMode(row[0]);syncComposerControls();closeComposerPanels(true);}));});
+      [['queue',ui('Meter em fila','Queue message'),ui('Guarda o pedido; o Maestro agenda quando puder executar.','Saves the request; Maestro schedules it when execution is possible.')],['append',ui('Juntar à anterior','Add to previous'),ui('Acrescenta o texto à última mensagem em fila, sem criar outro pedido.','Appends the text to the last queued message instead of creating a new request.')],['steer',ui('Orientar agora','Steer now'),ui('Envia instruções adicionais à tarefa em curso.','Sends additional instructions to the running task.')]].forEach(function(row){panel.appendChild(composerChoice(row[1],row[2],state.busyMode===row[0],function(){setBusyMode(row[0]);syncComposerControls();closeComposerPanels(true);}));});
       var pl=document.createElement('label');pl.className='queue-policy';pl.title=ui('Como o Maestro ordena os pedidos em espera (todos os chats). Dentro de cada chat mantém-se a ordem de chegada.','How Maestro orders waiting requests (all chats). Arrival order always holds inside a chat.');
       pl.innerHTML=ui('Ordem da fila','Queue order')+' <select>'+[['fifo',ui('Por chegada','By arrival')],['chat',ui('Um chat de cada vez','One chat at a time')],['short',ui('Mais curtos primeiro','Shortest first')],['auto',ui('Automática','Automatic')]].map(function(o){return '<option value="'+o[0]+'"'+(o[0]===(state.queuePolicy||'fifo')?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>';
       var ps=pl.querySelector('select');ps.onchange=function(){state.queuePolicy=ps.value;api('/api/queue/policy',{policy:ps.value});};panel.appendChild(pl);
