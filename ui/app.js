@@ -3208,6 +3208,7 @@ function esc(s) {
   function saveScrollNow() {
     var box = document.getElementById("chatScroll");
     if (!box || !state.currentChat) return;
+    if (box.__restoring || box.__settling) return; /* posição ainda não é do utilizador */
     var m = scrollStore();
     var atBottom = distanceToBottom(box) <= SCROLL_BOTTOM_EPS;
     if (atBottom) delete m[state.currentChat.id];
@@ -3231,7 +3232,24 @@ function esc(s) {
         scrollChatToBottom(true);
       }
       box.style.visibility = "";
+      settleScroll(box, chatId, v && typeof v.top === "number" ? v.top : null);
     });
+  }
+  /* Depois do restauro o conteúdo ainda cresce (imagens, iframes, fontes): durante 2 s
+     repõe-se o alvo a cada mudança de altura, até o utilizador mexer. Sem isto o chat «saltita». */
+  function settleScroll(box, chatId, top) {
+    var end = Date.now() + 2000, lastH = -1;
+    box.__settling = true;
+    function stop() { box.__settling = false; ["wheel", "touchstart", "mousedown", "keydown"].forEach(function (ev) { box.removeEventListener(ev, stop); }); }
+    ["wheel", "touchstart", "mousedown", "keydown"].forEach(function (ev) { box.addEventListener(ev, stop, { passive: true }); });
+    (function tick() {
+      if (!box.__settling || state.renderedChatId !== chatId || Date.now() > end) { stop(); return; }
+      if (box.scrollHeight !== lastH) {
+        lastH = box.scrollHeight;
+        box.scrollTop = top === null ? box.scrollHeight : Math.min(top, Math.max(0, box.scrollHeight - box.clientHeight));
+      }
+      requestAnimationFrame(tick);
+    })();
   }
   /* Imagens que acabam de carregar aumentam o chat: se estamos a seguir o fim, ficar no fim. */
   (function(){
