@@ -1183,7 +1183,7 @@ function esc(s) {
           '</div>' +
           (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? '<iframe class="code-visual" sandbox="allow-scripts" srcdoc="' + esc(visualTheme() + code + '<script>(function(){function s(){parent.postMessage({mvh:document.documentElement.scrollHeight},"*")}addEventListener("load",s);if(window.ResizeObserver)new ResizeObserver(s).observe(document.body)})()<\/script>').replace(/"/g, "&quot;") + '"></iframe>' : '') +
           '<pre' + (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? ' hidden' : '') + '><code>' + esc(code) + '</code></pre>' +
-          (/^(bash|sh|shell)$/i.test(lang) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button></div>' : '') +
+          (/^(bash|sh|shell)$/i.test(lang) && !/(^|\n)\s*(pwsh|powershell|Install-Module|Connect-[A-Z]\w+|New-[A-Z]\w+|Add-[A-Z]\w+|Set-[A-Z]\w+|Get-[A-Z]\w+|Test-[A-Z]\w+|az |winget |choco )/.test(code) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button></div>' : '') +
         '</div>'
       );
       return "\n" + token + "\n";
@@ -6225,8 +6225,11 @@ function esc(s) {
     });
     activeEl = bestEl; var away = !bestEl; if (away !== panel.classList.contains('st-away')){ panel.classList.toggle('st-away', away); sig = ''; if (away){ panel.style.top = ''; panel.style.bottom = ''; panel.style.clipPath = ''; } refresh(); } /* sem plano à vista: o painel fica visível com o aviso, nunca desaparece */
     if (best && best !== turn){ turn = best; panel.classList.add('st-switching'); clearTimeout(swTimer); swTimer = setTimeout(function(){ panel.classList.remove('st-switching'); }, 450); refresh(); }
+    hideIfNone();
     place();
   }
+  /* sem plano neste chat, ou nenhum plano à vista: o painel (e o 🧭) não aparecem */
+  function hideIfNone(){ if (!panel) return; var none = !current() || (wide() && !activeEl); panel.classList.toggle('st-none', none); }
   // Prende o painel à posição do pedido: acompanha-o ao scroll e fica no topo quando ele sobe.
   function place(){
     if (!panel || !activeEl || !isOpen() || !wide()) return;
@@ -6255,6 +6258,7 @@ function esc(s) {
     toggle.title = ui('Estratégia','Strategy');
     panel.querySelector('header strong').textContent = ui('Estratégia','Strategy');
     panel.querySelector('#stClose').setAttribute('aria-label', ui('Fechar','Close'));
+    hideIfNone();
     window.dispatchEvent(new Event('strategyvisibilitychange'));
     var m = open ? current() : null;
     var highlight = thinkNext && m && m.turn === pendingTurn && (window.__maestroState || {}).currentChat.id === pendingChat;

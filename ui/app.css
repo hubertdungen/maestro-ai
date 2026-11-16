@@ -2538,3 +2538,8 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 
 /* Strategy preso ao pedido: altura pelo conteúdo, nunca maior que o ecrã */
 #stPanel{max-height:calc(100vh - 86px)}
+
+/* Strategy: sem plano não mostra nada; sem contorno amarelo */
+#stPanel.st-none,#stPanel.st-none .st-toggle{visibility:hidden!important;pointer-events:none!important}
+#stPanel .st-main,#stPanel .st-toggle,.st-think,#stPanel .st-req{border-color:transparent!important}
+#stPanel .st-think{background:color-mix(in srgb,var(--card,#182133) 70%,transparent)}
