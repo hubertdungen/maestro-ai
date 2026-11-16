@@ -1,8 +1,8 @@
-# Maestro AI
-
-**Uma só porta de entrada para todos os agentes de IA que pagas.** O Maestro lê cada pedido, escolhe o motor certo (Claude, Codex, Gemini/Antigravity, DeepSeek), divide os trabalhos grandes num plano multiagente e mantém cada modelo dentro da quota diária e semanal — deixas de vigiar limites e passas a entregar.
-
-🇬🇧 [English version](README.md)
+<p align="center"><img src="maestro-mark.svg" width="84" alt=""/></p>
+<h1 align="center">Maestro AI</h1>
+<p align="center"><b>Uma só porta de entrada para todos os agentes de IA que pagas.</b><br/>Encaminha cada pedido para o motor certo, divide os trabalhos grandes num plano multiagente e mantém cada modelo dentro da quota.</p>
+<p align="center"><a href="README.md">🇬🇧 English</a> · <a href="#funcionalidades">Funcionalidades</a> · <a href="#o-painel-estratégia">Painel Estratégia</a> · <a href="#temas-mundos">Temas</a> · <a href="#início-rápido">Arranque rápido</a> · <a href="ORCHESTRATION.md">Desenho</a></p>
+<p align="center"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"/> <img alt="Licença" src="https://img.shields.io/badge/licen%C3%A7a-PolyForm%20NC%201.0-blue"/> <img alt="Motores" src="https://img.shields.io/badge/motores-Claude%20%C2%B7%20Codex%20%C2%B7%20Gemini%20%C2%B7%20DeepSeek-8A2BE2"/> <img alt="PWA" src="https://img.shields.io/badge/PWA-computador%20%C2%B7%20tablet%20%C2%B7%20telem%C3%B3vel-0A7"/></p>
 
 <p align="center"><img src="docs/screenshots/maestro-desktop.jpg" width="900" alt="Maestro AI"/></p>
 
@@ -39,6 +39,17 @@ pedido ─► triagem ─► simples? ─► um motor ─► resposta
 | **Integrações opcionais** | Média do NAS, Home Assistant e impressoras 3D vivem em `maestro_features.py`; configuras tu. |
 
 Detalhes de desenho: [ORCHESTRATION.md](ORCHESTRATION.md). Modelo de custos: [DEEPSEEK_PRICING.md](DEEPSEEK_PRICING.md).
+
+## O painel Estratégia
+
+<p align="center"><img src="docs/screenshots/strategy-panel.jpg" width="380" alt="Painel Estratégia"/></p>
+
+Cada pedido multiagente tem um plano ao vivo ao lado do chat:
+
+- **Pensamento do orquestrador** — porque é que o trabalho foi dividido assim.
+- **Grafo de agentes** — scout → especialista → revisor, com estado, motor e modelo por nó.
+- **Cronologia de decisões** — início, fim e orientações com hora.
+- **Sempre presente** — acompanha o pedido que estás a ler, mostra o plano ao vivo enquanto corre e passa a gaveta deslizante em janelas estreitas e telemóveis.
 
 ## Capturas
 
