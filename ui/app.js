@@ -6218,10 +6218,12 @@ function esc(s) {
       if (el.matches('.live-workflow') && !el.children.length) return;
       var idx = i++, r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
       if (r.bottom < vr.top || r.top > vr.bottom) return; // fora do ecrã: o painel não o segue
+      if (r.bottom < vr.top + 60) return; /* o painel segue o primeiro plano ainda à vista (o que vai saindo por cima) */
+      if (bestEl) return;
       if (d < bd){ var b = el.matches('[data-wf-turn]') ? el : el.querySelector('[data-wf-turn]'), t = b && b.getAttribute('data-wf-turn');
         bd = d; bestEl = el; best = t || (el.matches('.live-workflow') ? 'live' : 'i:' + idx); }
     });
-    activeEl = bestEl; var away = !bestEl; if (away !== panel.classList.contains('st-away')){ panel.classList.toggle('st-away', away); sig = ''; if (away) panel.style.top = ''; refresh(); } /* sem plano à vista: o painel fica visível com o aviso, nunca desaparece */
+    activeEl = bestEl; var away = !bestEl; if (away !== panel.classList.contains('st-away')){ panel.classList.toggle('st-away', away); sig = ''; if (away){ panel.style.top = ''; panel.style.bottom = ''; panel.style.clipPath = ''; } refresh(); } /* sem plano à vista: o painel fica visível com o aviso, nunca desaparece */
     if (best && best !== turn){ turn = best; panel.classList.add('st-switching'); clearTimeout(swTimer); swTimer = setTimeout(function(){ panel.classList.remove('st-switching'); }, 450); refresh(); }
     place();
   }
@@ -6230,8 +6232,10 @@ function esc(s) {
     if (!panel || !activeEl || !isOpen() || !wide()) return;
     document.querySelectorAll('.st-linked').forEach(function(x){ if (x !== activeEl) x.classList.remove('st-linked'); });
     activeEl.classList.add('st-linked');
-    var r = activeEl.getBoundingClientRect(), max = window.innerHeight - 16 - 160;
-    panel.style.top = Math.min(max, Math.max(70, r.top)) + 'px';
+    /* preso ao pedido: sobe/desce com ele (sem limite), cortado pelas bordas visíveis do chat */
+    var sc = document.getElementById('chatScroll'), vr = sc.getBoundingClientRect(), r = activeEl.getBoundingClientRect(), h = panel.offsetHeight;
+    panel.style.bottom = 'auto'; panel.style.top = r.top + 'px';
+    panel.style.clipPath = 'inset(' + Math.max(0, vr.top - r.top) + 'px -60px ' + Math.max(0, r.top + h - vr.bottom) + 'px -60px)';
   }
   function refresh(){
     if (!panel) return;
@@ -6242,7 +6246,7 @@ function esc(s) {
     var idleWant = wide() ? false : !current(); /* largo: o painel é sempre visível e a faixa fixa; só a gaveta estreita esvazia */
     if (idleWant !== panel.classList.contains('st-idle')) panel.classList.toggle('st-idle', idleWant);
     var idle = panel.classList.contains('st-idle');
-    var open = isOpen() && (!idle || !!panel.__peek); panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
+    var open = isOpen() && (!idle || !!panel.__peek); panel.classList.toggle('closed', !open); if (!open){ panel.style.top = ''; panel.style.bottom = ''; panel.style.clipPath = ''; }
     document.body.classList.toggle('st-open', open && wide());
     panel.setAttribute('aria-label', ui('Estratégia do pedido','Request strategy'));
     var toggle = panel.querySelector('#stToggle');

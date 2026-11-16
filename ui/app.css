@@ -2535,3 +2535,6 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 /* Strategy seamless: faixa fixa (nunca reflui), painel ao lado do pedido e a seguir o scroll sem atraso */
 @media (min-width:1081px){body.st-open #paneChat{padding-right:392px!important}}
 #stPanel,#stPanel.st-switching{transition:opacity .2s ease!important}
+
+/* Strategy preso ao pedido: altura pelo conteúdo, nunca maior que o ecrã */
+#stPanel{max-height:calc(100vh - 86px)}
