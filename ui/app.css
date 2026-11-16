@@ -2525,3 +2525,6 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .queue-policy select{background:rgba(5,10,20,.72);color:#e2e8f0;border:1px solid rgba(148,163,184,.25);border-radius:6px;font:inherit;padding:1px 4px}
 
 .composer-popover .queue-policy{margin:8px 4px 4px;font-size:.74rem}.composer-popover .queue-policy select{flex:1}
+
+/* Strategy nunca mexe no layout do chat: o painel é sobreposição pura (sem padding reativo → sem reflow ao trocar de chat) */
+@media (min-width:1081px){body #paneChat,body.st-open #paneChat,body:not(.st-open) #paneChat,body.st-none #paneChat{padding-right:52px!important;transition:none!important}}
