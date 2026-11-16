@@ -6209,7 +6209,7 @@ function esc(s) {
     panel.style.right = ((ir && ir.width > 8) ? window.innerWidth - ir.left + 10 : 10) + 'px';
     /* minimalista: só existe quando há um plano à vista (largo) ou plano no chat (gaveta); senão não ocupa nada */
     var idle = wide() ? (panel.classList.contains('st-away') || !current()) : !current();
-    panel.classList.toggle('st-idle', idle);
+    panel.classList.toggle('st-idle', idle); document.body.classList.toggle('st-none', idle && wide());
     var open = isOpen() && !idle; panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
     document.body.classList.toggle('st-open', open && wide());
     var pane = document.getElementById('paneChat');
