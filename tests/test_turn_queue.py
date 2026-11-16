@@ -298,6 +298,15 @@ class IntegrationTests(unittest.TestCase):
         self.enqueue('A'); W.stop_chat_job('chat',reason='steer')
         self.assertEqual(len(self.queue.pending('chat')),1)
 
+    def test_steer_becomes_first_forced_task_and_gets_a_reply(self):
+        self.enqueue('A'); self.enqueue('B')
+        W.TURN_QUEUE.update(self.queue.tasks[0]['id'], status='running')
+        W.enqueue_turn(W.steer_prepare({'id': 'chat', 'text': 'virar', 'steer': True}))
+        self.assertEqual(self.queue.tasks[0]['status'], 'stopped')
+        pend = self.queue.pending('chat')
+        self.assertEqual([t['text'] for t in pend][:2], ['virar', 'B'])
+        self.assertTrue(pend[0]['force'] and pend[0]['steer'])
+
     def test_failed_turn_retry_replaces_error_response(self):
         with patch.object(W,'execute_agent_turn',side_effect=RuntimeError('fixture')):
             self.enqueue('A');W.schedule_turns_once();self.wait_done()

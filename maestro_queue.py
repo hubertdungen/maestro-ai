@@ -349,7 +349,7 @@ class TurnQueue:
             for t in self.tasks:
                 if request_id and t.get('request_id') == request_id and t['chat_id'] == body['id']:
                     return dict(t), False
-            task = {k: body.get(k) for k in ('text', 'images', 'docs', 'project', 'engine', 'request_id', 'model_id', 'effort')}
+            task = {k: body.get(k) for k in ('text', 'images', 'docs', 'project', 'engine', 'request_id', 'model_id', 'effort', 'steer', 'force', 'steer_note')}
             task.update(id=uuid.uuid4().hex, chat_id=body['id'], ts=time.time(), status='queued', reason='evaluating')
             self.tasks.append(task)
             self.save()
