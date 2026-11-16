@@ -6480,7 +6480,11 @@ function esc(s) {
   function load(){
     fetch("/api/orchestrator/thoughts",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
       box.classList.toggle("busy",!!d.busy);
+      box.classList.toggle("warn",!!d.warning);
       document.getElementById("obNow").textContent=d.now;
+      var warn=document.getElementById("obWarn");
+      if(!warn){ warn=document.createElement("div"); warn.id="obWarn"; warn.className="ob-warn"; document.getElementById("obPop").insertBefore(warn,document.getElementById("obNow")); }
+      warn.hidden=!d.warning; warn.textContent=d.warning||"";
       var key=JSON.stringify(d.thoughts.map(function(t){return t.ts;}));
       if(key===lastKey) return; lastKey=key;
       document.getElementById("obList").innerHTML=d.thoughts.length?d.thoughts.map(function(t,i){
@@ -6489,5 +6493,13 @@ function esc(s) {
     }).catch(function(){});
   }
   load(); setInterval(function(){ if(!document.hidden) load(); },4000);
-  box.addEventListener("mouseenter",load);
+  /* Abre e fecha com um clique (ou toque); fecha ao clicar fora ou com Esc. Passar o rato já não abre nada. */
+  function setOpen(on){ box.classList.toggle("open",on); box.setAttribute("aria-expanded",String(on)); if(on) load(); }
+  box.setAttribute("aria-expanded","false");
+  box.addEventListener("click",function(e){ if(e.target.closest("#obPop")) return; setOpen(!box.classList.contains("open")); });
+  box.addEventListener("keydown",function(e){
+    if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setOpen(!box.classList.contains("open")); }
+    else if(e.key==="Escape") setOpen(false);
+  });
+  document.addEventListener("click",function(e){ if(!box.contains(e.target)) setOpen(false); });
 })();

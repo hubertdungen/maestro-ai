@@ -2007,10 +2007,7 @@ def thoughts_snapshot():
     pol = {'fifo': 'por ordem de chegada', 'chat': 'acabar um chat antes de outro', 'short': 'pedidos curtos primeiro',
            'auto': 'automática: chats em curso e pedidos curtos primeiro'}.get(queue_policy(), queue_policy())
     now = f'{len(run)} a correr · {len(wait)} em espera · fila {pol}'
-    warning = claude_auth_warning()
-    if warning:
-        now = warning + ' · ' + now
-    return dict(now=now, busy=bool(run or wait), thoughts=list(THOUGHTS)[-25:][::-1])
+    return dict(now=now, warning=claude_auth_warning(), busy=bool(run or wait), thoughts=list(THOUGHTS)[-25:][::-1])
 
 
 def schedule_turns_once():
