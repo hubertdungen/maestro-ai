@@ -105,13 +105,14 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(len(fresh['chat']['messages']), 2)
             self.assertFalse(fresh['chat_same'])
 
-    def test_claude_sign_in_warning_is_kept_and_cleared(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(web, 'CLAUDE_AUTH_PATH', pathlib.Path(tmp) / 'a.json'):
-            web.note_claude_auth('Warning: this sign-in ends between 2026-11-21 and 2026-11-24 (in 5 days).')
-            self.assertIn('2026-11-21', web.claude_auth_warning())
-            web.note_claude_auth('')
-            self.assertEqual(web.claude_auth_warning(), '')
-
+    def test_claude_sign_in_warning_only_when_it_is_close(self):
+        import maestro as M
+        now = 1_800_000_000
+        iso = lambda days: __import__('datetime').datetime.fromtimestamp(now + days * 86400, __import__('datetime').timezone.utc).isoformat().replace('+00:00', 'Z')
+        self.assertEqual(M.claude_login_warning(now, {'loggedIn': True, 'loginExpiresAt': iso(20)}), '')
+        self.assertIn('faltam 5 dias', M.claude_login_warning(now, {'loggedIn': True, 'loginExpiresAt': iso(5)}))
+        self.assertIn('sem sessão', M.claude_login_warning(now, {'loggedIn': False}))
+        self.assertEqual(M.claude_login_warning(now, {}), '')
 
 if __name__ == '__main__':
     unittest.main()

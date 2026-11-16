@@ -1444,8 +1444,6 @@ def _execute_agent_turn(engine_choice: str, full_prompt: str, raw_user_text: str
             rc, out, err = run_cmd_capture(cmd, event_provider='claude')
             reply_text = out.strip()
             stderr_text = err.strip()
-            if rc == 0:
-                note_claude_auth(stderr_text)
             tools_used.append(f"Motor: Claude {model.capitalize()}")
 
         elif chosen == "codex":
@@ -1989,27 +1987,8 @@ def think(key, reason, task, engine=None):
         _THOUGHT_LAST.clear()
 
 
-CLAUDE_AUTH_PATH = M.STATE_DIR / "claude-auth.json"
-
-
-def note_claude_auth(stderr_text):
-    """The Claude CLI announces the end of its sign-in days ahead; without this every Claude engine just stops one day."""
-    found = re.search(r'sign-in ends between (\d{4}-\d\d-\d\d) and (\d{4}-\d\d-\d\d)', stderr_text or '')
-    try:
-        if found:
-            CLAUDE_AUTH_PATH.write_text(json.dumps({'first': found[1], 'last': found[2], 'seen': time.time()}))
-        elif CLAUDE_AUTH_PATH.exists():
-            CLAUDE_AUTH_PATH.unlink()
-    except OSError:
-        pass
-
-
 def claude_auth_warning():
-    try:
-        data = json.loads(CLAUDE_AUTH_PATH.read_text())
-    except (OSError, ValueError):
-        return ''
-    return f"⚠️ Login do Claude expira entre {data['first']} e {data['last']}: corre `claude auth login`"
+    return M.claude_login_warning()
 
 
 def thoughts_snapshot():

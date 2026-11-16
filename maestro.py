@@ -255,6 +255,44 @@ def get_claude_quota(force_refresh: bool = False) -> dict:
     return info
 
 
+def claude_login_warning(now: float | None = None, status: dict | None = None) -> str:
+    """Days before the Claude CLI sign-in ends, say so: otherwise every Claude engine just stops one morning.
+
+    `claude auth status` answers locally (no model call); the answer is cached for an hour.
+    """
+    now = time.time() if now is None else now
+    cache = STATE_DIR / "claude-auth.json"
+    if status is None:
+        try:
+            saved = json.loads(cache.read_text())
+            if now - saved.get("checked", 0) < 3600:
+                status = saved.get("status")
+        except (OSError, ValueError):
+            pass
+    if status is None:
+        try:
+            binary = NODE_BIN / "claude" if (NODE_BIN / "claude").exists() else NPM_BIN / "claude"
+            out = subprocess.run([str(binary), "auth", "status"], capture_output=True, text=True, timeout=20,
+                                 env={k: v for k, v in os.environ.items() if k != "CCA_TOKEN"})
+            status = {k: v for k, v in json.loads(out.stdout).items() if k in ("loggedIn", "loginExpiresAt")}
+            ensure_dirs()
+            cache.write_text(json.dumps({"checked": now, "status": status}))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return ""  # unknown is not a warning
+    if status.get("loggedIn") is False:
+        return "⚠️ Claude sem sessão iniciada: corre `claude auth login`"
+    try:
+        expires = dt.datetime.fromisoformat(str(status["loginExpiresAt"]).replace("Z", "+00:00")).timestamp()
+    except (KeyError, ValueError):
+        return ""
+    days = (expires - now) / 86400
+    if days > 10:
+        return ""
+    when = dt.datetime.fromtimestamp(expires).strftime("%d/%m")
+    return (f"⚠️ Login do Claude expira a {when} (faltam {max(0, days):.0f} dias; o CLI pode terminá-lo até 3 dias antes): "
+            "corre `claude auth login`")
+
+
 def get_codex_quota(force_refresh: bool = False) -> dict:
     """Consulta o uso real 5h e 7d do ChatGPT Plus (Codex) via wham/usage (com fallback para history.jsonl)."""
     ensure_dirs()
@@ -1303,6 +1341,9 @@ def print_dashboard(plan: dict | None = None, force_substitute: bool = False) ->
     print(f"{C_CYAN}{C_BOLD}║  ⚡ MAESTRO AI · ORQUESTRADOR CENTRAL (PAVILION-NAS)                         ║{C_RESET}")
     print(f"{C_CYAN}{C_BOLD}╚══════════════════════════════════════════════════════════════════════════════╝{C_RESET}")
     print(f"  {C_BOLD}• Maestro em Comando{C_RESET}     : {C_GREEN if not m['is_substitute'] else C_AMBER}{m['name']}{C_RESET} {C_DIM}({m['reason']}){C_RESET}")
+    login = claude_login_warning()
+    if login:
+        print(f"  {C_AMBER}{login}{C_RESET}")
     print(
         f"  {C_BOLD}1. Gemini / Antigravity{C_RESET}  : "
         f"Gemini: {a_color}{a.get('gemini_used_pct', 0):.1f}% usado{C_RESET} "
