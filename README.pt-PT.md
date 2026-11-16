@@ -97,7 +97,7 @@ As credenciais (chaves, tokens) lêem-se do ambiente ou do estado local em `~/.l
 
 ## Status
 
-Projeto pessoal, usado diariamente pelo autor. As interfaces mudam sem aviso. Issues são bem-vindos; o suporte é feito na medida do possível, salvo licença comercial.
+Projeto pessoal, usado diariamente pelo autor. As interfaces mudam sem aviso. Issues são bem-vindos (ver [CONTRIBUTING.pt-PT.md](CONTRIBUTING.pt-PT.md)); o suporte é feito na medida do possível, salvo licença comercial.
 
 ## Licença
 

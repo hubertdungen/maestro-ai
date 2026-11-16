@@ -34,9 +34,23 @@ FOLDERS_LOCK = threading.RLock()
 SCHEDULES_FILE = STATE_DIR / "schedules.json"
 PASTES_DIR = pathlib.Path("/srv/appdata/0_SERVER/pastes")
 
+def _ha_conf():
+    """HA token/webhook live outside the repo: env vars or ~/.config/maestro/ha.env (KEY=VALUE)."""
+    conf = {}
+    try:
+        for line in (pathlib.Path.home() / ".config/maestro/ha.env").read_text().splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.split("=", 1)
+                conf[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return {k: os.environ.get(k) or conf.get(k, "") for k in ("HA_TOKEN", "HA_WEBHOOK")}
+
+
 HA_URL = "http://127.0.0.1:8123"
-HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIzN2FhNDFjZjhiMTU0NzNhYmRjY2JlOTk4OTM1NGZmZSIsImlhdCI6MTc5MjM2NTE3MCwiZXhwIjoyMTA3NzI1MTcwfQ.8RFtvBViGbDHMKNQqXX7m4iQBqWSqNAseJzNS_DDHLs"
-HA_WEBHOOK = "http://127.0.0.1:8123/api/webhook/casa-3d4e16034f696c5b"
+_HA = _ha_conf()
+HA_TOKEN = _HA["HA_TOKEN"]
+HA_WEBHOOK = _HA["HA_WEBHOOK"]
 
 DEFAULT_FOLDERS = [
     {"id": "nas", "name": "Pavilion-NAS & Pulso", "icon": "⚡", "color": "#38bdf8", "cwd": str(HOME), "desc": "Administração total do servidor, Docker, segurança e Pulso"},
