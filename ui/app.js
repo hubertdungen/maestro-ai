@@ -1365,6 +1365,46 @@ function esc(s) {
       state.messageQueue.some(function(t){ return String(t.text || '').indexOf(marker) !== -1; });
   }
 
+  var SEEN_KEY = 'maestro-seen-v1';
+  function seenSet() { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); } catch (e) { return {}; } }
+  function isSeen(m) { return !!seenSet()[suggestionKey(m)]; }
+  function markSeen(list) {
+    var s = seenSet(), now = Date.now();
+    list.forEach(function(m){ s[suggestionKey(m)] = now; });
+    Object.keys(s).sort(function(a, b){ return s[b] - s[a]; }).slice(2000).forEach(function(k){ delete s[k]; });
+    try { localStorage.setItem(SEEN_KEY, JSON.stringify(s)); } catch (e) {}
+  }
+  function bulkMsgs() {
+    var c = state.currentChat;
+    if (!c || c.archived) return [];
+    return (c.messages || []).filter(function(m){ return m.role === 'assistant' && hasImplementationSuggestion(m) && !isSeen(m) && !suggestionRequested(m); });
+  }
+  function bulkSeen() { markSeen(bulkMsgs()); renderMessages(); updateJumpUpBtn(); }
+  function bulkContinue(btn) {
+    var chat = state.currentChat, list = bulkMsgs();
+    if (!chat || !list.length || btn.disabled) return;
+    btn.disabled = true;
+    var items = list.map(function(m, i){
+      var t = String(m.text || '').replace(/```[\s\S]*?```/g, '').replace(/\s+/g, ' ').trim();
+      return (i + 1) + '. ' + (t.length > 280 ? t.slice(0, 280) + '…' : t);
+    }).join('\n');
+    var text = '[apply-all-' + list.length + '-' + hash32(items) + ']\n' + ui(
+      'Continua tudo de uma vez: para cada resposta acima listada, executa agora o que ficou por fazer ou proposto (código, validação, commit, publicação), corrige o que a revisão apontou e repete a validação. Um único relatório final, sem perguntas de permissão.\n\nRespostas (por ordem, resumo; o texto completo está acima na conversa):\n',
+      'Continue everything at once: for each reply listed below, now do whatever was left undone or proposed (code, validation, commit, deploy), fix what the review flagged and re-validate. One single final report, no permission questions.\n\nReplies (in order, summarised; full text is above in the conversation):\n') + items;
+    var config = selectedModelConfig();
+    api('/api/chat/send', {id:chat.id, project:chat.project || 'nas', engine:chat.engine || 'auto',
+      model_id:config.model_id, effort:config.effort, text:text, images:[], docs:[], async:true,
+      request_id:chat.id + '-' + hash32(text)}).then(function(res){
+        markSeen(list);
+        if (!state.currentChat || state.currentChat.id !== chat.id) return;
+        if (!receiveQueue(res)) return;
+        if (res.chat) state.currentChat = res.chat;
+        state.activeJob = res.job || null;
+        renderMessages(); syncComposerBusyUI(); startJobPolling(chat.id);
+      }).catch(function(){ notifyUser('Maestro', ui('Não foi possível confirmar o pedido. Podes tentar novamente.', 'Could not confirm the request. You can retry.')); })
+      .then(function(){ btn.disabled = false; updateJumpUpBtn(); });
+  }
+
   function applyImplementationSuggestion(m, button) {
     var chat = state.currentChat;
     if (!chat || chat.archived || button.disabled || suggestionRequested(m)) return;
@@ -1578,13 +1618,21 @@ function esc(s) {
       }
     }
     turn.appendChild(foot);
-    if (hasImplementationSuggestion(m) && !(state.currentChat || {}).archived) {
+    if (hasImplementationSuggestion(m) && !(state.currentChat || {}).archived && !isSeen(m)) {
       var action = document.createElement('button');
       action.type = 'button'; action.className = 'apply-implementation';
       action.disabled = suggestionRequested(m);
       action.textContent = action.disabled ? ui('Implementação pedida', 'Implementation requested') : hasPendingWork(m) ? ui('▶ Continuar trabalho', 'Continue work') : ui('Aplicar implementação sugerida', 'Apply suggested implementation');
       action.onclick = function(){ applyImplementationSuggestion(m, action); };
       turn.appendChild(action);
+      if (!action.disabled) {
+        var seen = document.createElement('button');
+        seen.type = 'button'; seen.className = 'apply-seen';
+        seen.textContent = '✓ ' + ui('Visto', 'Seen');
+        seen.title = ui('Esconde esta sugestão', 'Hide this suggestion');
+        seen.onclick = function(){ markSeen([m]); action.remove(); seen.remove(); updateJumpUpBtn(); };
+        turn.appendChild(seen);
+      }
     }
     return turn;
   }
@@ -2092,6 +2140,9 @@ function esc(s) {
     up.setAttribute('aria-label', label);
     var count = up.querySelector('.attention-count');
     if (count) count.textContent = targets.length;
+    var bar = document.getElementById('attnBulk');
+    if (bar) bar.hidden = bulkMsgs().length < 2;
+    var n = bar && bar.querySelector('.attn-n'); if (n) n.textContent = bulkMsgs().length;
   }
 
   function stickToBottom(force) {
@@ -2122,6 +2173,8 @@ function esc(s) {
     btn.style.bottom = Math.round(pr.bottom - fr.top + 20) + "px";
     var up = document.getElementById("btnJumpUp");
     if (up) { up.style.setProperty("--fab-right", btn.style.getPropertyValue("--fab-right")); up.style.bottom = btn.style.bottom; }
+    var bb = document.getElementById("attnBulk");
+    if (bb) { bb.style.setProperty("--fab-right", btn.style.getPropertyValue("--fab-right")); bb.style.bottom = (parseInt(btn.style.bottom, 10) + 108) + "px"; }
     updateJumpEndBtn();
   }
 
@@ -2313,6 +2366,11 @@ function esc(s) {
     var btn = document.getElementById("btnJumpEnd");
     if (!box || !btn) return;
     box.addEventListener("scroll", onChatScroll, { passive: true });
+    var bulkBar = document.getElementById('attnBulk');
+    if (bulkBar) {
+      bulkBar.querySelector('.attn-seen').addEventListener('click', bulkSeen);
+      bulkBar.querySelector('.attn-all').addEventListener('click', function(e){ bulkContinue(e.currentTarget); });
+    }
     var upBtn = document.getElementById("btnJumpUp");
     if (upBtn) upBtn.addEventListener("click", function(){
       var t = pendingAttentionTarget();

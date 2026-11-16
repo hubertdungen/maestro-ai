@@ -2543,3 +2543,11 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 #stPanel.st-none,#stPanel.st-none .st-toggle{visibility:hidden!important;pointer-events:none!important}
 #stPanel .st-main,#stPanel .st-toggle,.st-think,#stPanel .st-req{border-color:transparent!important}
 #stPanel .st-think{background:color-mix(in srgb,var(--card,#182133) 70%,transparent)}
+
+.attn-bulk{position:absolute;right:var(--fab-right,12px);z-index:30;display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid rgba(244,114,182,.45);border-radius:14px;background:var(--bg-card,#101c28);font-size:11px;box-shadow:0 4px 16px #0008}
+.attn-bulk[hidden]{display:none}
+.attn-bulk button,.apply-seen{border:1px solid rgba(244,114,182,.45);border-radius:10px;background:transparent;color:var(--text,#e8f4ff);font:inherit;padding:5px 9px;cursor:pointer;transition:background .15s,transform .1s}
+.attn-bulk button:hover,.apply-seen:hover{background:rgba(244,114,182,.16)}
+.attn-bulk button:active,.apply-seen:active{transform:scale(.96)}
+.attn-bulk button:disabled{opacity:.5}
+.apply-seen{align-self:flex-start;margin:4px 0 0 6px;font-size:11px;opacity:.75}
