@@ -1337,8 +1337,16 @@ function esc(s) {
       (m.plan ? "P" + (m.plan.domain || "") + (m.plan.dimension || "") + (m.plan.agents || []).join(",") + (m.tools || []).join(",") : "");
   }
 
+  // Resposta que admite trabalho em falta (porta de qualidade, «o que falta», pendente…).
+  function hasPendingWork(m) {
+    if (m.role !== 'assistant') return false;
+    var text = String(m.text || '').replace(/```[\s\S]*?```/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return /porta de qualidade|o que falta|ainda nao (?:esta|foi|ficou)|por fazer|pendente|em falta|nao se pode dizer|not done yet|still (?:missing|pending)|remaining work|what.s missing/.test(text);
+  }
+
   function hasImplementationSuggestion(m) {
     if (m.role !== 'assistant') return false;
+    if (hasPendingWork(m)) return true;
     var text = String(m.text || '').replace(/```[\s\S]*?```/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     return /\b(?:sugiro|suger\w*|recomendaria|podemos implementar|proponho|propoe\w*|podes? implementar|posso (?:implementar|adicionar|criar)|poderiamos|recomendo|i suggest|i recommend|i can implement|we could|proposed flow)\b/.test(text) &&
       /\b(?:implement\w*|alterac\w*|corrigir|adicionar|botao|fluxo|triagem|subtarefas|codigo|feature|workflow|button|routing|code|change\w*)\b/.test(text);
@@ -1361,7 +1369,9 @@ function esc(s) {
     button.textContent = ui('A colocar em fila…', 'Queuing…');
     var config = selectedModelConfig();
     // A stable request id deduplicates retries; the source quote ties this to this exact response.
-    var text = '[' + suggestionKey(m) + ']\n' + ui(
+    var text = hasPendingWork(m) ? '[' + suggestionKey(m) + ']\n' + ui(
+      'Continua o trabalho: executa agora tudo o que a resposta abaixo diz que falta (código, validação, commit, publicação), corrige o que a revisão apontou e repete a validação. Não respondas com mais um relatório.\n\nResposta anterior:\n',
+      'Continue the work: now do everything the reply below says is missing (code, validation, commit, deploy), fix what the review flagged and re-validate. Do not answer with another report.\n\nPrevious reply:\n') + m.text : '[' + suggestionKey(m) + ']\n' + ui(
       'Implementa e valida a proposta abaixo nesta conversa. Respeita o âmbito e as restrições que já indiquei. Avança com o trabalho autorizado e apresenta o resultado concreto. Se a proposta tiver alternativas incompatíveis, esclarece apenas a escolha necessária.\n\nProposta a aplicar:\n',
       'Implement and validate the proposal below in this conversation. Respect my existing scope and constraints. Complete the authorized work and report the concrete result. If the proposal contains incompatible alternatives, clarify only the necessary choice.\n\nProposal to apply:\n') + m.text;
     return api('/api/chat/send', {id:chat.id, project:chat.project || 'nas', engine:chat.engine || 'auto',
@@ -1506,6 +1516,7 @@ function esc(s) {
         '</details>';
     }
     if (m.plan && m.plan.workflow) inner += renderWorkflow(m.plan.workflow, m.turn_id);
+    else if (m.role === "assistant" && m.plan && m.turn_id) turn.setAttribute("data-wf-turn", m.turn_id); /* Strategy também para pedidos sem multiagente */
     inner += renderRichMarkdown(String(m.text || "").replace(/^\[apply-proposal-[^\]\n]+\]\n/, ""));
     if (m.docs && m.docs.length) {
       inner += '<div class="doc-chips">' + m.docs.map(function(d){
@@ -1568,7 +1579,7 @@ function esc(s) {
       var action = document.createElement('button');
       action.type = 'button'; action.className = 'apply-implementation';
       action.disabled = suggestionRequested(m);
-      action.textContent = action.disabled ? ui('Implementação pedida', 'Implementation requested') : ui('Aplicar implementação sugerida', 'Apply suggested implementation');
+      action.textContent = action.disabled ? ui('Implementação pedida', 'Implementation requested') : hasPendingWork(m) ? ui('▶ Continuar trabalho', 'Continue work') : ui('Aplicar implementação sugerida', 'Apply suggested implementation');
       action.onclick = function(){ applyImplementationSuggestion(m, action); };
       turn.appendChild(action);
     }
@@ -6103,6 +6114,10 @@ function esc(s) {
         return {id:n.id, title:n.title || n.id, status:normStatus(n.status), engine:r.agent_used || n.actual_agent || n.engine || '', model:n.model_id || r.model_id || '',
           role:n.role, deps:n.depends_on || [], note:n.error || n.reason || '', text:typeof r === 'string' ? r : (r.text || ''), started:n.started_at, finished:n.finished_at, guided:(n.guidance || []).length}; })};
   };
+  // Pedido sem workflow multiagente: plano de um só passo montado a partir de m.plan.
+  S.synth = function(msg){ var p = msg.plan || {};
+    return {turn_id:msg.turn_id, coordinator:p.maestro_name || '', planning_source:'local_capability', reason:p.reason || '', created_at:msg.ts, status:'done',
+      nodes:[{id:'n1', title:(p.agents && p.agents.length ? p.agents.join(' ➔ ') : (p.exec_engine_name || ui('Execução','Execution'))), status:'done', engine:p.exec_engine || '', model_id:p.model_id || '', role:'executor'}]}; };
   S.fromSubtasks = function(tasks){
     return {turn:'', coord:ui('Orquestrador','Orchestrator'), reason:'', source:'', nodes:(tasks || []).map(function(t){
       return {id:t.node_id, title:t.title, status:normStatus(t.status), engine:t.engine, model:t.model, role:t.role, deps:t.deps || [], note:'', text:''}; })};
@@ -6195,9 +6210,10 @@ function esc(s) {
     // Chave canónica = turn_id; sem ele, posição na lista ('i:N'), igual à que followScroll calcula.
     var lastUser = '';
     (chat.messages || []).forEach(function(msg){ if (msg.role === 'user') lastUser = String(msg.text || '').replace(/\s+/g, ' ').trim();
-      if (msg.plan && msg.plan.workflow && msg.plan.workflow.nodes) {
-      var k = msg.turn_id || msg.plan.workflow.turn_id || ('i:' + list.length);
-      list = list.filter(function(x){ return x[0] !== k; }); list.push([k, msg.plan.workflow, 0, lastUser]); } });
+      var pw = msg.plan && msg.plan.workflow && msg.plan.workflow.nodes ? msg.plan.workflow : (msg.role === 'assistant' && msg.plan && msg.turn_id ? S.synth(msg) : null);
+      if (pw) {
+      var k = msg.turn_id || pw.turn_id || ('i:' + list.length);
+      list = list.filter(function(x){ return x[0] !== k; }); list.push([k, pw, 0, lastUser]); } });
     // O snapshot ao vivo substitui o gravado do mesmo pedido (por task_id ou turn_id).
     if (job && job.status === 'running' && job.chat_id === chat.id && job.workflow && job.workflow.nodes) {
       var key = job.task_id || job.workflow.turn_id || 'live';
@@ -6213,7 +6229,7 @@ function esc(s) {
     var sc = document.getElementById('chatScroll'); if (!sc || sc.__restoring) return; /* a trocar de chat: sem reflows nem trocas de pedido a meio */
     var vr = sc.getBoundingClientRect(), mid = vr.top + vr.height * 0.5; var best = null, bd = 1e9, bestEl = null;
     var i = 0, total = 0;
-    sc.querySelectorAll('.wf-panel, .live-workflow').forEach(function(el){
+    sc.querySelectorAll('.wf-panel, .live-workflow, .turn[data-wf-turn]').forEach(function(el){
       if (!el.matches('.live-workflow') || el.children.length) total++;
       if (el.matches('.live-workflow') && !el.children.length) return;
       var idx = i++, r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
