@@ -45,6 +45,7 @@ Um orquestrador só serve se o que volta estiver acabado. Três mecanismos garan
 | **Painel Estratégia** | Ao lado do chat: o raciocínio do orquestrador, o grafo de agentes, o estado de cada nó, o motor/modelo usado e a cronologia de decisões. Acompanha o pedido que estás a ler; sem nenhum à vista mostra o último ou o plano ao vivo. |
 | **Orçamentos de quota** | As quotas semanais dividem-se em orçamentos diários; o DeepSeek tem um orçamento em dinheiro por ciclo, com barra diária e linhas amarela/vermelha para uso extra justificado. |
 | **Scouts e revisores só de leitura** | Um modo restrito da API DeepSeek que só lista pastas, lê excertos e faz grep dentro do projeto; os revisores Claude têm shell só de inspeção (`git status/diff/log/show` e o verificador de páginas). |
+| **Encaminhamento com contexto** | Uma resposta curta herda o domínio e o nível do trabalho que continua; quando dizes que a tentativa anterior falhou, a seguinte vai para um só motor mais forte. |
 | **Paralelismo real** | Pedidos sobre apps diferentes correm ao mesmo tempo em subscrições diferentes; um Sentinel barato decide a independência, e quem escreve dentro do mesmo plano continua em exclusivo. |
 | **Estúdio web** | Chats e pastas com arquivo, fila de pedidos, quotas e frota ao vivo, seis mundos visuais, interface PT/EN e PWA instalável em computador, tablet e telemóvel. |
 | **Respostas interativas** | As respostas podem mostrar HTML, tabelas, gráficos e cartões de perguntas e respostas passo a passo por plataforma. |

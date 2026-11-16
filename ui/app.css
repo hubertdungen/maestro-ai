@@ -894,10 +894,17 @@ code.inline-code {
   font-family: var(--mono); font-size: 0.84em; padding: 2px 5px;
   border-radius: 5px; background: rgba(56,189,248,.12); color: #bae6fd;
 }
+.older-turns {
+  align-self: center; margin: 6px auto 14px; padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: rgba(255,255,255,.04); color: var(--muted);
+  font-size: 0.74rem; cursor: pointer; flex: 0 0 auto;
+}
+.older-turns:hover, .older-turns:focus-visible { color: var(--text, #fff); border-color: var(--line-strong); }
 .turn-imgs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; max-width: 100%; }
 .turn-imgs img {
   /* Altura reservada: a imagem chega depois do texto e não pode empurrar a conversa. */
-  max-width: 100%; width: auto; height: 180px; min-width: 96px;
+  /* Moldura fixa: largura desconhecida antes de carregar mudava a quebra de linha (+188 px medidos). */
+  width: min(260px, 100%); height: 180px;
   object-fit: contain; border-radius: 11px; border: 1px solid var(--line-strong);
   cursor: zoom-in; background: rgba(5, 8, 17, 0.55); display: block;
 }

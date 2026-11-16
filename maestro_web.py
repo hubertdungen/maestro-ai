@@ -1780,7 +1780,7 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
     for cycle in range(1, QAGATE.MAX_CYCLES + 1):
         # Text says what the engine claims; the repositories say what it really left behind.
         seen, repos = repos, QAGATE.repo_findings(res.get("text"), cwd, job["t0"], user_text)
-        hits = QAGATE.check(res.get("text")) + repos
+        hits = QAGATE.check(res.get("text"), user_text) + repos
         if cycle > 1 and hits == repos == seen:
             break  # the maker looked and left those files on purpose: do not ask a third time
         if not hits or cycle == QAGATE.MAX_CYCLES or job.get("status") == "stopped":
@@ -1805,7 +1805,7 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
                    plan=dict(redo.get("plan") or {}, **({"workflow": kept["workflow"]} if kept.get("workflow") else {}), qa_cycles=cycle))
     if hits:
         repos = QAGATE.repo_findings(res.get("text"), cwd, job["t0"], user_text)
-        left = QAGATE.check(res.get("text")) + repos
+        left = QAGATE.check(res.get("text"), user_text) + repos
         if left:
             res["text"] = str(res.get("text") or "") + QAGATE.exhausted_note(left, repos)
     return res
@@ -2060,12 +2060,13 @@ def schedule_turns_once():
             continue
         cwd = (get_folder_map().get(task.get('project') or 'nas') or {}).get('cwd') or str(HOME)
         try:
-            plan = M.classify_task(task.get('text') or 'Analisa a imagem anexada', cwd, task.get('images') or [])
-            plan['write_paths'] = task['write_paths']
             chat = load_chat(cid)
             if not chat:
                 TURN_QUEUE.update(task['id'], status='cancelled', reason='chat_deleted')
                 continue
+            plan = M.classify_task(task.get('text') or 'Analisa a imagem anexada', cwd, task.get('images') or [],
+                                   thread=M.thread_context(chat.get('messages')))
+            plan['write_paths'] = task['write_paths']
             history_chars = sum(len(str(m.get('text') or '')) for m in (chat.get('messages') or [])[-10:])
             task['images'] = M.extract_images(task.get('text') or '', task.get('images') or [])
             task['estimated_input_tokens'] = (len(task.get('text') or '') + min(history_chars, 18000) + sum(int(d.get('chars') or 0) for d in task.get('docs') or [])) // 4
@@ -2196,7 +2197,8 @@ def dispatch_turn(body):
         f"[🧭 ORIENTAÇÃO EM TEMPO REAL DO HUBERT DURANTE A EXECUÇÃO]: {user_text}{prev_steps_note}"
         if is_steer else (user_text or "Analisa detalhadamente a imagem anexada.")
     )
-    plan = body.get("_plan") or M.classify_task(user_text or "Analisa a imagem anexada", cwd, images)
+    plan = body.get("_plan") or M.classify_task(user_text or "Analisa a imagem anexada", cwd, images,
+                                                thread=M.thread_context(chat.get("messages")))
     if body.get('failure_notes') and not is_steer:
         effective_user_text += ('\n\n[TENTATIVA ' + str(len(body['failure_notes']) + 1) + ' · as anteriores falharam]\n' +
             '\n'.join('- ' + n for n in body['failure_notes']) +

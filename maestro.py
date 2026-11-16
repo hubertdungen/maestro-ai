@@ -876,8 +876,50 @@ def update_shared_context(last_prompt: str | None = None, plan: dict | None = No
     SHARED_CONTEXT.write_text("\n".join(lines), encoding="utf-8")
 
 
-def classify_task(prompt: str, cwd: str | None = None, extra_images: list[str] | None = None) -> dict:
-    """Mede a dimensão, deteta o domínio, imagens coladas e decide o pipeline ideal de agente(s)."""
+DOMAINS = {
+    "unity": "Polistrat (Unity / C#)",
+    "modding": "Modding (SpaceBourne 2 / Unreal)",
+    "web": "Web & Design (DungenLabs / Portfólio)",
+    "nas": "Pavilion-NAS (Sistema / Pulso / Docker)",
+}
+_LEVELS = (("Rápida", 1), ("Média", 2), ("Grande", 3), ("Exigente", 3), ("Batch", 4))
+# The user is saying the previous attempt did not solve it.
+RETRY_RE = re.compile(
+    r"\b(continua\w* (?:igual\w*|a nao|sem|bugad\w*|a fazer|o mesmo|a dar|sempre)|ainda (?:nao (?:esta|funciona|aparece|vejo|da|mudou)|continua)|"
+    r"igualzinh\w*|nao (?:funciona|resolveu|resolve|mudou|aparece|faz o que|esta a funcionar)|outra vez|voltamos atras|buggou|bugad\w*|"
+    r"pessim\w*|burr\w*|merda|fod\w*|porra|mentir\w*|mentes|deficiente|inutiliz\w*|unitiliz\w*)\b")
+
+
+def thread_context(messages, now: float | None = None) -> dict:
+    """What a follow-up continues: the last finished turn of its conversation (level, domain, engine, age)."""
+    now = time.time() if now is None else now
+    for m in reversed(messages or []):
+        plan = m.get("plan") if m.get("role") == "assistant" else None
+        if isinstance(plan, dict) and plan.get("dimension"):
+            level = next((n for label, n in _LEVELS if str(plan["dimension"]).startswith(label)), 0)
+            key = next((k for k, label in DOMAINS.items() if label == plan.get("domain")), None)
+            return {"level": level, "domain_key": key, "engine": str(plan.get("exec_engine") or ""),
+                    "age_s": now - float(m.get("ts") or 0)}
+    return {}
+
+
+def says_it_failed(prompt: str) -> bool:
+    import unicodedata
+    text = "".join(c for c in unicodedata.normalize("NFD", prompt.lower()) if not unicodedata.combining(c))
+    letters = [c for c in prompt if c.isalpha()]
+    shouting = len(letters) >= 12 and sum(c.isupper() for c in letters) / len(letters) > 0.6
+    return bool(RETRY_RE.search(text)) or shouting
+
+
+def classify_task(prompt: str, cwd: str | None = None, extra_images: list[str] | None = None, thread: dict | None = None) -> dict:
+    """Mede a dimensão, deteta o domínio, imagens coladas e decide o pipeline ideal de agente(s).
+
+    ``thread`` (ver thread_context) liga o pedido à conversa: «continua igual» a meio de um
+    trabalho não é uma tarefa rápida nova, é a continuação desse trabalho.
+    """
+    thread = thread or {}
+    follow_up = bool(thread.get("level")) and thread.get("age_s", 1e9) < 6 * 3600
+    retry = follow_up and says_it_failed(prompt)
     p_low = prompt.lower()
     cwd_low = (cwd or os.getcwd()).lower()
     claude_q = get_claude_quota()
@@ -895,8 +937,9 @@ def classify_task(prompt: str, cwd: str | None = None, extra_images: list[str] |
         domain = "Web & Design (DungenLabs / Portfólio)"
         domain_key = "web"
     else:
-        domain = "Pavilion-NAS (Sistema / Pulso / Docker)"
-        domain_key = "nas"
+        # No keyword of its own: a follow-up stays in the domain it was already working on.
+        domain_key = thread.get("domain_key") if follow_up and thread.get("domain_key") else "nas"
+        domain = DOMAINS[domain_key]
 
     word_count = len(prompt.split())
     is_batch = any(k in p_low for k in ("todos os ficheiros", "centenas", "em massa", "batch", "traduzir tudo", "converter todos"))
@@ -918,6 +961,11 @@ def classify_task(prompt: str, cwd: str | None = None, extra_images: list[str] |
     else:
         dimension = "Rápida / Direta"
         dim_level = 1
+    if follow_up and dim_level == 1 and thread["level"] >= 2:
+        # Short words, same job: never hand the continuation of real work to the cheapest model.
+        dimension, dim_level = "Média (Execução Cirúrgica)", 2
+    if retry and dim_level < 3:
+        dimension, dim_level = "Exigente (nova tentativa com modelo mais forte)", 3
 
     claude_ok_sonnet = claude_q["pace_status"] != "limitado" and claude_q["five_hour_pct"] < 90 and claude_q.get("seven_day_pct", 0) < 100
     claude_ok_opus = claude_q["pace_status"] == "ok" and claude_q["five_hour_pct"] < 65 and claude_q.get("seven_day_pct", 0) < 88
@@ -1077,6 +1125,21 @@ def classify_task(prompt: str, cwd: str | None = None, extra_images: list[str] |
                       f"{ENGINE_DISPLAY.get(specialist, specialist)}. "
                       "O Maestro disponível gere a distribuição; o plano validado define os agentes que vão efetivamente executar.")
             agents = [ENGINE_DISPLAY.get(specialist, specialist)]
+
+    if retry and not two_card_mode:
+        # One stronger engine, not a bigger plan: Opus after Sonnet/Haiku/others, Codex after Opus.
+        previous = thread.get("engine", "")
+        stronger = ("claude-opus" if claude_ok_opus and "opus" not in previous else
+                    "codex" if codex_ok and not previous.startswith("codex") else None)
+        multi_agent = False
+        if stronger:
+            recommended_engine = stronger
+            for group in (runnable, available_engines):
+                if stronger not in group:
+                    group.append(stronger)
+            agents = [ENGINE_DISPLAY.get(stronger, stronger)]
+            reason = ("A tentativa anterior não resolveu: nova tentativa com um modelo mais forte "
+                      f"({ENGINE_DISPLAY.get(stronger, stronger)}), num só motor.")
 
     engine_origin = "task_route"
     if recommended_engine == "auto":

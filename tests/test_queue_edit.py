@@ -57,7 +57,7 @@ class SchedulingChanges(unittest.TestCase):
 
     def test_edit_during_classification_invalidates_old_launch(self):
         self.enqueue('A')
-        def classify(*args):
+        def classify(*args, **kwargs):
             t = self.queue.tasks[0]
             self.queue.edit_pending('chat', t['id'], 'Changed', 'A')
             return plan()
