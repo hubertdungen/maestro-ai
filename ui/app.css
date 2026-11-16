@@ -519,9 +519,7 @@ html[data-world="dungen"] .bubble { border-radius: 3px; }
 #chatScroll[data-style="code"] .turn.assistant .bubble {
   background: rgba(4, 9, 16, 0.94); border-left: 2px solid var(--cyan); border-radius: 4px;
 }
-#chatScroll[data-style="code"] .turn.user .bubble {
-  background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 4px;
-}
+#chatScroll[data-style="code"] .turn.user .bubble { border-radius: 4px; }
 #chatScroll[data-style="code"] pre, #chatScroll[data-style="code"] code { font-size: 0.77rem; }
 #chatScroll[data-style="code"] .bubble p { margin: 4px 0; }
 #chatScroll[data-style="code"] .bubble { max-width: min(100%, 980px); }
@@ -2367,7 +2365,9 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .st-events{margin:0;padding:0;list-style:none;display:grid;gap:3px}.st-events time{color:var(--muted,#94a3b8);font-variant-numeric:tabular-nums;margin-right:4px}.st-empty{color:var(--muted,#94a3b8)}
 #stPanel.closed .st-main{display:none}#stPanel.closed{width:0;top:70px;bottom:auto}#stPanel.closed .st-toggle{left:-40px}
 @media (min-width:1081px){body.st-open #paneChat{padding-right:var(--st-w,360px)}}
-@media (max-width:1080px){#stPanel{display:none}}
+/* painel fechado: reserva a faixa do 🧭 para não ficar sobre o scroller */
+@media (min-width:1081px){body:not(.st-open) #paneChat{padding-right:52px}}
+@media (max-width:1080px){#stPanel{width:min(340px,calc(100vw - 56px));z-index:60;top:64px}#stPanel.closed{width:0}}
 @media (prefers-reduced-motion:reduce){.st-edge.flow,.st-node[data-status=running],.st-think.pulse{animation:none}}
 
 /* Active agents: vector circuitry below the content, with a moving light veil. */
@@ -2478,6 +2478,16 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .role-tag{display:inline-flex;align-items:center;vertical-align:middle;white-space:nowrap;font:600 .66rem/1.4 var(--font-mono,monospace);letter-spacing:.03em;border:1px solid currentColor;border-radius:6px;padding:1px 6px;color:#a5b4fc;background:color-mix(in srgb,currentColor 9%,transparent)}
 .role-maestro{color:#f0c978}.role-planner,.role-analysis{color:#c4b5fd}.role-sentinel{color:#67e8f9}.role-scout{color:#93c5fd}.role-implementation{color:#86efac}.role-review{color:#fda4af}.role-synthesis{color:#d8b4fe}
 .mt-roles{margin:12px 0;font-size:.75rem}.mt-roles>summary{cursor:pointer;color:var(--muted);padding:8px 0}.mt-role-grid{display:grid;gap:9px;padding:8px 0}.mt-role-grid>div{display:flex;align-items:flex-start;gap:9px}.mt-role-grid .role-tag{flex-shrink:0}.mt-roles p{color:var(--muted);line-height:1.5}
+/* sub-pedidos na lista: o título ocupa o espaço, 1 linha com reticências; o tag do motor fica à direita sem encolher */
+.wf-subchats button>span:nth-child(2){flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:1.3}
+.wf-subchats button .mtag{flex:none;margin-left:6px}
+.wf-subchats button .wf-dot{flex:none}
+.turn-foot .mark-done{color:#7be0a4;border-color:rgba(123,224,164,.45)}
+.turn-foot .mark-done:hover{background:rgba(123,224,164,.14)}
+/* legibilidade: títulos/código/ligações dentro do balão do utilizador (fundo em gradiente saturado) */
+.turn.user .bubble :is(.rich-h1,.rich-h2,.rich-h3,.rich-h4){color:#fff;border-bottom-color:rgba(255,255,255,.45);text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.turn.user .bubble a{color:#fff;text-decoration:underline}
+.turn.user .bubble :not(pre)>code{background:rgba(0,0,0,.35);color:#fff}
 
 /* Request admission state, visible in history, live output and composer queue. */
 .request-status{display:inline-flex;align-items:center;gap:5px;vertical-align:middle;white-space:nowrap;font-size:11px;font-weight:700;line-height:1.5;padding:2px 8px;border-radius:999px;border:1px solid currentColor}
@@ -2486,3 +2496,58 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .request-status[data-status=waiting]{color:var(--muted,#94a3b8);background:var(--panel,#111827)}
 .request-status[data-status=interrupted]{color:#fbbf24;background:var(--panel,#111827)}
 .live-work-status .request-status{flex-shrink:0}
+
+/* st-fix: linha de estado com chips alinhados; decisões em 2 colunas */
+.st-node>small:not(.st-decision){display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-width:0}
+.st-node>small .mtag{max-width:100%;min-width:0}
+.st-events li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 8px;align-items:baseline}
+.st-events time{margin-right:0}
+.st-node{align-content:start}.st-node>small .mtag{margin-left:0}
+
+#stPanel.st-switching{transition:top .4s cubic-bezier(.2,.8,.2,1)}
+#stPanel .st-body.st-swap{animation:stSwap .35s ease}
+@keyframes stSwap{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+#stPanel .st-req{display:block;width:100%;text-align:left;margin:0 0 8px;padding:7px 10px;border-radius:10px;border:1px solid var(--line-strong,#38bdf855);background:var(--card,#182133);color:inherit;cursor:pointer;font:inherit}
+#stPanel .st-req small{display:block;color:var(--muted,#94a3b8);font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+#stPanel .st-req span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px}
+.st-linked{outline:1px solid var(--line-strong,#38bdf8aa);outline-offset:3px;border-radius:12px;transition:outline-color .3s}
+@media (prefers-reduced-motion:reduce){#stPanel.st-switching{transition:none}#stPanel .st-body.st-swap{animation:none}}
+
+#stPanel.st-away .st-main{opacity:.85}
+/* toast de atualização não passa por baixo do painel Strategy */
+@media (min-width:1081px){body.st-open .update-toast{width:min(920px,calc(100% - var(--st-w,0px) - 24px));margin-left:12px;margin-right:calc(var(--st-w,0px) + 12px);max-width:none}}
+
+#stPanel{transition:opacity .3s ease,top .4s cubic-bezier(.2,.8,.2,1)}#stPanel.st-idle{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .3s ease,visibility 0s .3s}
+@media (min-width:1081px){body.st-none #paneChat{padding-right:0}}
+@media (prefers-reduced-motion:reduce){#stPanel,#paneChat{transition:none!important}}
+
+.queue-policy{display:flex;align-items:center;gap:6px;font:600 .66rem var(--mono);color:#94a3b8;margin:2px 0 4px}
+.queue-policy select{background:rgba(5,10,20,.72);color:#e2e8f0;border:1px solid rgba(148,163,184,.25);border-radius:6px;font:inherit;padding:1px 4px}
+
+.composer-popover .queue-policy{margin:8px 4px 4px;font-size:.74rem}.composer-popover .queue-policy select{flex:1}
+
+/* Strategy nunca mexe no layout do chat: o painel é sobreposição pura (sem padding reativo → sem reflow ao trocar de chat) */
+@media (min-width:1081px){body #paneChat,body.st-open #paneChat,body:not(.st-open) #paneChat,body.st-none #paneChat{padding-right:52px!important;transition:none!important}}
+
+/* Strategy em repouso: só o botão 🧭 discreto, sem ocupar espaço; clicar abre */
+#stPanel.st-idle{opacity:1;visibility:visible;pointer-events:none}#stPanel.st-idle .st-toggle{pointer-events:auto;opacity:.45}#stPanel.st-idle .st-toggle:hover{opacity:1}
+
+/* Strategy seamless: faixa fixa (nunca reflui), painel ao lado do pedido e a seguir o scroll sem atraso */
+@media (min-width:1081px){body.st-open #paneChat{padding-right:392px!important}}
+#stPanel,#stPanel.st-switching{transition:opacity .2s ease!important}
+
+/* Strategy preso ao pedido: altura pelo conteúdo, nunca maior que o ecrã */
+#stPanel{max-height:calc(100vh - 86px)}
+
+/* Strategy: sem plano não mostra nada; sem contorno amarelo */
+#stPanel.st-none,#stPanel.st-none .st-toggle{visibility:hidden!important;pointer-events:none!important}
+#stPanel .st-main,#stPanel .st-toggle,.st-think,#stPanel .st-req{border-color:transparent!important}
+#stPanel .st-think{background:color-mix(in srgb,var(--card,#182133) 70%,transparent)}
+
+.attn-bulk{position:absolute;right:var(--fab-right,12px);z-index:30;display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid rgba(244,114,182,.45);border-radius:14px;background:var(--bg-card,#101c28);font-size:11px;box-shadow:0 4px 16px #0008}
+.attn-bulk[hidden]{display:none}
+.attn-bulk button,.apply-seen{border:1px solid rgba(244,114,182,.45);border-radius:10px;background:transparent;color:var(--text,#e8f4ff);font:inherit;padding:5px 9px;cursor:pointer;transition:background .15s,transform .1s}
+.attn-bulk button:hover,.apply-seen:hover{background:rgba(244,114,182,.16)}
+.attn-bulk button:active,.apply-seen:active{transform:scale(.96)}
+.attn-bulk button:disabled{opacity:.5}
+.apply-seen{align-self:flex-start;margin:4px 0 0 6px;font-size:11px;opacity:.75}

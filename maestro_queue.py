@@ -381,6 +381,30 @@ class TurnQueue:
             return [dict(t) for t in self.tasks if t['chat_id'] == chat_id and t['status'] in ('queued', 'interrupted')]
 
 
+POLICIES = ('fifo', 'chat', 'short', 'auto')
+
+
+def order_pending(pending, positions, running_chats, policy):
+    """Order in which waiting requests are offered to the scheduler. Within a chat the arrival order always holds.
+    fifo = by arrival; chat = finish a chat before starting another; short = cheapest chat head first;
+    auto = chats already running first, then cheapest head."""
+    heads = {}
+    for t in sorted(pending, key=lambda t: positions[t['id']]):
+        heads.setdefault(t['chat_id'], t)
+    def cost(t):
+        return len(t.get('text') or '') + 2000 * len(t.get('images') or []) + 1000 * len(t.get('docs') or [])
+    def key(t):
+        h, pos = heads[t['chat_id']], positions[t['id']]
+        if policy == 'chat':
+            return (positions[h['id']], pos)
+        if policy == 'short':
+            return (cost(h), positions[h['id']], pos)
+        if policy == 'auto':
+            return (t['chat_id'] not in running_chats, cost(h), positions[h['id']], pos)
+        return (pos,)
+    return sorted(pending, key=key)
+
+
 _TRIAGE_CACHE = {}
 TRIAGE_PROMPT = (
     "Triagem de uma fila de pedidos a um assistente de sysadmin/programação. Pedido NOVO:\n<<{new}>>\n\n"

@@ -1183,7 +1183,7 @@ function esc(s) {
           '</div>' +
           (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? '<iframe class="code-visual" sandbox="allow-scripts" srcdoc="' + esc(visualTheme() + code + '<script>(function(){function s(){parent.postMessage({mvh:document.documentElement.scrollHeight},"*")}addEventListener("load",s);if(window.ResizeObserver)new ResizeObserver(s).observe(document.body)})()<\/script>').replace(/"/g, "&quot;") + '"></iframe>' : '') +
           '<pre' + (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? ' hidden' : '') + '><code>' + esc(code) + '</code></pre>' +
-          (/^(bash|sh|shell)$/i.test(lang) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button></div>' : '') +
+          (/^(bash|sh|shell)$/i.test(lang) && !/(^|\n)\s*(pwsh|powershell|Install-Module|Connect-[A-Z]\w+|(New|Add|Set|Get|Test|Remove)-[A-Z]\w+|az [a-z-]+ |winget |choco )/.test(code) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button></div>' : '') +
         '</div>'
       );
       return "\n" + token + "\n";
@@ -1337,8 +1337,19 @@ function esc(s) {
       (m.plan ? "P" + (m.plan.domain || "") + (m.plan.dimension || "") + (m.plan.agents || []).join(",") + (m.tools || []).join(",") : "");
   }
 
+  var PENDING_RE = /\b(?:porta de qualidade|o que falta|ainda nao (?:esta|foi|ficou)|por fazer|ficou pendente|pendentes?|em falta|nao se pode dizer|not done yet|still (?:missing|pending)|remaining work|what.s missing)\b/;
+  // Resposta que admite trabalho em falta (porta de qualidade, «o que falta», pendente…).
+  function hasPendingWork(m) {
+    if (m.role !== 'assistant') return false;
+    var msgs = (state.currentChat || {}).messages || [];
+    if (msgs.indexOf(m) !== -1 && msgs.slice(msgs.indexOf(m) + 1).some(function(x){ return x.role === 'assistant'; })) return false; // só a última resposta
+    var text = String(m.text || '').replace(/```[\s\S]*?```/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return PENDING_RE.test(text);
+  }
+
   function hasImplementationSuggestion(m) {
     if (m.role !== 'assistant') return false;
+    if (hasPendingWork(m)) return true;
     var text = String(m.text || '').replace(/```[\s\S]*?```/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     return /\b(?:sugiro|suger\w*|recomendaria|podemos implementar|proponho|propoe\w*|podes? implementar|posso (?:implementar|adicionar|criar)|poderiamos|recomendo|i suggest|i recommend|i can implement|we could|proposed flow)\b/.test(text) &&
       /\b(?:implement\w*|alterac\w*|corrigir|adicionar|botao|fluxo|triagem|subtarefas|codigo|feature|workflow|button|routing|code|change\w*)\b/.test(text);
@@ -1354,6 +1365,46 @@ function esc(s) {
       state.messageQueue.some(function(t){ return String(t.text || '').indexOf(marker) !== -1; });
   }
 
+  var SEEN_KEY = 'maestro-seen-v1';
+  function seenSet() { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); } catch (e) { return {}; } }
+  function isSeen(m) { return !!seenSet()[suggestionKey(m)]; }
+  function markSeen(list) {
+    var s = seenSet(), now = Date.now();
+    list.forEach(function(m){ s[suggestionKey(m)] = now; });
+    Object.keys(s).sort(function(a, b){ return s[b] - s[a]; }).slice(2000).forEach(function(k){ delete s[k]; });
+    try { localStorage.setItem(SEEN_KEY, JSON.stringify(s)); } catch (e) {}
+  }
+  function bulkMsgs() {
+    var c = state.currentChat;
+    if (!c || c.archived) return [];
+    return (c.messages || []).filter(function(m){ return m.role === 'assistant' && hasImplementationSuggestion(m) && !isSeen(m) && !suggestionRequested(m); });
+  }
+  function bulkSeen() { markSeen(bulkMsgs()); renderMessages(); updateJumpUpBtn(); }
+  function bulkContinue(btn) {
+    var chat = state.currentChat, list = bulkMsgs();
+    if (!chat || !list.length || btn.disabled) return;
+    btn.disabled = true;
+    var items = list.map(function(m, i){
+      var t = String(m.text || '').replace(/```[\s\S]*?```/g, '').replace(/\s+/g, ' ').trim();
+      return (i + 1) + '. ' + (t.length > 280 ? t.slice(0, 280) + '…' : t);
+    }).join('\n');
+    var text = '[apply-all-' + list.length + '-' + hash32(items) + ']\n' + ui(
+      'Continua tudo de uma vez: para cada resposta acima listada, executa agora o que ficou por fazer ou proposto (código, validação, commit, publicação), corrige o que a revisão apontou e repete a validação. Um único relatório final, sem perguntas de permissão.\n\nRespostas (por ordem, resumo; o texto completo está acima na conversa):\n',
+      'Continue everything at once: for each reply listed below, now do whatever was left undone or proposed (code, validation, commit, deploy), fix what the review flagged and re-validate. One single final report, no permission questions.\n\nReplies (in order, summarised; full text is above in the conversation):\n') + items;
+    var config = selectedModelConfig();
+    api('/api/chat/send', {id:chat.id, project:chat.project || 'nas', engine:chat.engine || 'auto',
+      model_id:config.model_id, effort:config.effort, text:text, images:[], docs:[], async:true,
+      request_id:chat.id + '-' + hash32(text)}).then(function(res){
+        markSeen(list);
+        if (!state.currentChat || state.currentChat.id !== chat.id) return;
+        if (!receiveQueue(res)) return;
+        if (res.chat) state.currentChat = res.chat;
+        state.activeJob = res.job || null;
+        renderMessages(); syncComposerBusyUI(); startJobPolling(chat.id);
+      }).catch(function(){ notifyUser('Maestro', ui('Não foi possível confirmar o pedido. Podes tentar novamente.', 'Could not confirm the request. You can retry.')); })
+      .then(function(){ btn.disabled = false; updateJumpUpBtn(); });
+  }
+
   function applyImplementationSuggestion(m, button) {
     var chat = state.currentChat;
     if (!chat || chat.archived || button.disabled || suggestionRequested(m)) return;
@@ -1361,7 +1412,9 @@ function esc(s) {
     button.textContent = ui('A colocar em fila…', 'Queuing…');
     var config = selectedModelConfig();
     // A stable request id deduplicates retries; the source quote ties this to this exact response.
-    var text = '[' + suggestionKey(m) + ']\n' + ui(
+    var text = hasPendingWork(m) ? '[' + suggestionKey(m) + ']\n' + ui(
+      'Continua o trabalho: executa agora tudo o que a resposta abaixo diz que falta (código, validação, commit, publicação), corrige o que a revisão apontou e repete a validação. Não respondas com mais um relatório.\n\nResposta anterior:\n',
+      'Continue the work: now do everything the reply below says is missing (code, validation, commit, deploy), fix what the review flagged and re-validate. Do not answer with another report.\n\nPrevious reply:\n') + m.text : '[' + suggestionKey(m) + ']\n' + ui(
       'Implementa e valida a proposta abaixo nesta conversa. Respeita o âmbito e as restrições que já indiquei. Avança com o trabalho autorizado e apresenta o resultado concreto. Se a proposta tiver alternativas incompatíveis, esclarece apenas a escolha necessária.\n\nProposta a aplicar:\n',
       'Implement and validate the proposal below in this conversation. Respect my existing scope and constraints. Complete the authorized work and report the concrete result. If the proposal contains incompatible alternatives, clarify only the necessary choice.\n\nProposal to apply:\n') + m.text;
     return api('/api/chat/send', {id:chat.id, project:chat.project || 'nas', engine:chat.engine || 'auto',
@@ -1506,6 +1559,7 @@ function esc(s) {
         '</details>';
     }
     if (m.plan && m.plan.workflow) inner += renderWorkflow(m.plan.workflow, m.turn_id);
+    else if (m.role === "assistant" && m.plan && m.turn_id) turn.setAttribute("data-wf-turn", m.turn_id); /* Strategy também para pedidos sem multiagente */
     inner += renderRichMarkdown(String(m.text || "").replace(/^\[apply-proposal-[^\]\n]+\]\n/, ""));
     if (m.docs && m.docs.length) {
       inner += '<div class="doc-chips">' + m.docs.map(function(d){
@@ -1546,15 +1600,39 @@ function esc(s) {
       };
       if (m.role === 'user') mkBtn('✎ ' + ui('Editar', 'Edit'), ui('Nova conversa até aqui, com esta mensagem para editar', 'New chat up to here, with this message ready to edit'), 0, true);
       mkBtn('⑂ ' + ui('Bifurcar', 'Fork'), ui('Nova conversa a partir daqui', 'New chat from here'), 1, false);
+      if (m.role === 'assistant' && _cm[_cm.length - 1] === m) {
+        var done = document.createElement('button');
+        done.type = 'button'; done.className = 'mark-done';
+        done.textContent = '✓ ' + ui('Dar como fechado', 'Mark as done');
+        done.title = ui('Arquiva esta conversa como concluída', 'Archive this conversation as finished');
+        done.onclick = function(){
+          var c = state.currentChat; if (!c) return;
+          if (c.activity && c.activity.state === 'running') { alert(ui('Para a execução antes de fechar.', 'Stop the running task first.')); return; }
+          done.disabled = true;
+          api('/api/chat/archive', {id: c.id, archived: true}).then(function(d){
+            if (d.chat) { state.currentChat = d.chat; state.activeJob = null; syncComposerBusyUI(); renderMessages(); }
+            return refreshChats();
+          }).catch(function(){ done.disabled = false; alert(ui('Não foi possível fechar.', 'Could not close.')); });
+        };
+        foot.appendChild(done);
+      }
     }
     turn.appendChild(foot);
-    if (hasImplementationSuggestion(m) && !(state.currentChat || {}).archived) {
+    if (hasImplementationSuggestion(m) && !(state.currentChat || {}).archived && !isSeen(m)) {
       var action = document.createElement('button');
       action.type = 'button'; action.className = 'apply-implementation';
       action.disabled = suggestionRequested(m);
-      action.textContent = action.disabled ? ui('Implementação pedida', 'Implementation requested') : ui('Aplicar implementação sugerida', 'Apply suggested implementation');
+      action.textContent = action.disabled ? ui('Implementação pedida', 'Implementation requested') : hasPendingWork(m) ? ui('▶ Continuar trabalho', 'Continue work') : ui('Aplicar implementação sugerida', 'Apply suggested implementation');
       action.onclick = function(){ applyImplementationSuggestion(m, action); };
       turn.appendChild(action);
+      if (!action.disabled) {
+        var seen = document.createElement('button');
+        seen.type = 'button'; seen.className = 'apply-seen';
+        seen.textContent = '✓ ' + ui('Visto', 'Seen');
+        seen.title = ui('Esconde esta sugestão', 'Hide this suggestion');
+        seen.onclick = function(){ markSeen([m]); action.remove(); seen.remove(); updateJumpUpBtn(); };
+        turn.appendChild(seen);
+      }
     }
     return turn;
   }
@@ -1984,7 +2062,7 @@ function esc(s) {
     _autoScrollRaf = window.requestAnimationFrame(function () {
       _autoScrollRaf = 0;
       var b = chatScrollBox();
-      if (!b || (!mustScroll && (b.__follow === false || composerHasFocus()))) return;
+      if (!b || b.__restoring || (!mustScroll && (b.__follow === false || composerHasFocus()))) return;
       var target = Math.max(0, b.scrollHeight - b.clientHeight);
       _autoScrollAt = Date.now();
       _autoScrollTop = target;
@@ -2062,6 +2140,9 @@ function esc(s) {
     up.setAttribute('aria-label', label);
     var count = up.querySelector('.attention-count');
     if (count) count.textContent = targets.length;
+    var bar = document.getElementById('attnBulk');
+    if (bar) bar.hidden = bulkMsgs().length < 2;
+    var n = bar && bar.querySelector('.attn-n'); if (n) n.textContent = bulkMsgs().length;
   }
 
   function stickToBottom(force) {
@@ -2092,6 +2173,8 @@ function esc(s) {
     btn.style.bottom = Math.round(pr.bottom - fr.top + 20) + "px";
     var up = document.getElementById("btnJumpUp");
     if (up) { up.style.setProperty("--fab-right", btn.style.getPropertyValue("--fab-right")); up.style.bottom = btn.style.bottom; }
+    var bb = document.getElementById("attnBulk");
+    if (bb) { bb.style.setProperty("--fab-right", btn.style.getPropertyValue("--fab-right")); bb.style.bottom = (parseInt(btn.style.bottom, 10) + 108) + "px"; }
     updateJumpEndBtn();
   }
 
@@ -2108,9 +2191,11 @@ function esc(s) {
       var _sc = document.getElementById("chatScroll");
       if (_sc) {
         _sc.__follow = true;
+        _sc.__restoring = true; /* até restoreScrollFor correr, nada mais mexe no scroll */
         _sc.style.visibility = "hidden"; /* sem salto visível do topo para o fim */
-        setTimeout(function () { restoreScrollFor(c && c.id); }, 30);
-        setTimeout(function () { _sc.style.visibility = ""; }, 600);
+        clearTimeout(_sc.__restoreT); clearTimeout(_sc.__unhideT);
+        _sc.__restoreT = setTimeout(function () { restoreScrollFor(c && c.id); }, 30);
+        _sc.__unhideT = setTimeout(function () { _sc.style.visibility = ""; }, 600);
       }
     }
 
@@ -2264,7 +2349,9 @@ function esc(s) {
       _liveEl = null;
     }
 
-    if (wasNearBottom) {
+    if (box.__restoring) {
+      /* troca de chat: restoreScrollFor posiciona uma só vez */
+    } else if (wasNearBottom) {
       box.__follow = true;
       scrollChatToBottom(false);
     } else {
@@ -2279,6 +2366,11 @@ function esc(s) {
     var btn = document.getElementById("btnJumpEnd");
     if (!box || !btn) return;
     box.addEventListener("scroll", onChatScroll, { passive: true });
+    var bulkBar = document.getElementById('attnBulk');
+    if (bulkBar) {
+      bulkBar.querySelector('.attn-seen').addEventListener('click', bulkSeen);
+      bulkBar.querySelector('.attn-all').addEventListener('click', function(e){ bulkContinue(e.currentTarget); });
+    }
     var upBtn = document.getElementById("btnJumpUp");
     if (upBtn) upBtn.addEventListener("click", function(){
       var t = pendingAttentionTarget();
@@ -2553,6 +2645,17 @@ function esc(s) {
       ? "resta <b>0%</b>"
       : (limited ? "<b>limite atingido</b>" : "resta <b>" + Math.round(rem) + "%</b>");
     return '<span class="quota-batt ' + cls + '"><span class="batt-ico">🔋</span>' + body + '</span>';
+  }
+  function dsBudgetHtml(b) {
+    var sub = '<div class="stat-sub">Saldo em dólares (a API não expõe quota). A barra é o orçamento de hoje: 15 € ÷ dias do ciclo.</div>';
+    if (!b || !(b.daily_eur > 0)) return sub;
+    var f = function(v){ return Number(v).toFixed(2).replace('.', ',') + ' €'; };
+    var rem = Math.max(0, Math.min(100, (b.daily_eur - b.today_eur) / b.daily_eur * 100));
+    var cycRem = Math.max(0, Math.min(100, b.remaining_eur / b.cap_eur * 100));
+    var cls = quotaCls(rem, rem <= 0);
+    return '<div class="meter-track battery" title="Orçamento diário"><div class="meter-fill ' + cls + '" style="width:' + rem + '%"></div></div>' +
+      '<div class="stat-sub">Hoje: gasto <b>' + f(b.today_eur) + '</b> de <b>' + f(b.daily_eur) + '</b> · resta <b>' + Math.round(rem) + '%</b>' +
+      '<br>Ciclo: gasto <b>' + f(b.spent_eur) + '</b> de ' + f(b.cap_eur) + ' · resta <b>' + Math.round(cycRem) + '%</b> · reset ' + esc(b.reset_at || '—') + '</div>';
   }
   function restText(used) {
     var rem = remainingPct(used);
@@ -2882,7 +2985,7 @@ function esc(s) {
         '</div>' +
         '<div class="stat-card">' +
           '<div class="stat-head"><span>🔮 DeepSeek API</span><span style="color:var(--green)">' + esc(d.balance_text || "Sem leitura") + '</span></div>' +
-          '<div class="stat-sub">Saldo em dólares — a API não expõe percentagem de quota, por isso não há barra inventada.</div>' +
+          dsBudgetHtml(d.budget) +
         '</div>' +
         '<div class="quota-legenda">🔋 100% = cheio · 0% = esgotado. A barra de cada modelo mostra 7d no Claude e 5h no Codex; passa o rato ou toca para ver a outra janela.</div>' +
         '<button type="button" class="insp-refresh-btn" id="btnRefreshQuotas">🔄 Atualizar quotas agora</button>' +
@@ -3177,6 +3280,7 @@ function esc(s) {
   function saveScrollNow() {
     var box = document.getElementById("chatScroll");
     if (!box || !state.currentChat) return;
+    if (box.__restoring || box.__settling) return; /* posição ainda não é do utilizador */
     var m = scrollStore();
     var atBottom = distanceToBottom(box) <= SCROLL_BOTTOM_EPS;
     if (atBottom) delete m[state.currentChat.id];
@@ -3187,8 +3291,10 @@ function esc(s) {
   function restoreScrollFor(chatId) {
     var box = document.getElementById("chatScroll");
     if (!box) return;
-    var v = chatId ? scrollStore()[chatId] : null;
     window.requestAnimationFrame(function () {
+      if (state.renderedChatId !== chatId) return; /* já se trocou outra vez; o restore mais recente trata disto */
+      var v = chatId ? scrollStore()[chatId] : null;
+      box.__restoring = false;
       if (v && typeof v.top === "number") {
         box.__follow = false;
         var maxTop = Math.max(0, box.scrollHeight - box.clientHeight);
@@ -3198,13 +3304,30 @@ function esc(s) {
         scrollChatToBottom(true);
       }
       box.style.visibility = "";
+      settleScroll(box, chatId, v && typeof v.top === "number" ? v.top : null);
     });
+  }
+  /* Depois do restauro o conteúdo ainda cresce (imagens, iframes, fontes): durante 2 s
+     repõe-se o alvo a cada mudança de altura, até o utilizador mexer. Sem isto o chat «saltita». */
+  function settleScroll(box, chatId, top) {
+    var end = Date.now() + 2000, lastH = -1;
+    box.__settling = true;
+    function stop() { box.__settling = false; ["wheel", "touchstart", "mousedown", "keydown"].forEach(function (ev) { box.removeEventListener(ev, stop); }); }
+    ["wheel", "touchstart", "mousedown", "keydown"].forEach(function (ev) { box.addEventListener(ev, stop, { passive: true }); });
+    (function tick() {
+      if (!box.__settling || state.renderedChatId !== chatId || Date.now() > end) { stop(); return; }
+      if (box.scrollHeight !== lastH) {
+        lastH = box.scrollHeight;
+        box.scrollTop = top === null ? box.scrollHeight : Math.min(top, Math.max(0, box.scrollHeight - box.clientHeight));
+      }
+      requestAnimationFrame(tick);
+    })();
   }
   /* Imagens que acabam de carregar aumentam o chat: se estamos a seguir o fim, ficar no fim. */
   (function(){
     var b = document.getElementById("chatScroll");
     if (b) b.addEventListener("load", function(e){
-      if (e.target && e.target.tagName === "IMG" && b.__follow !== false && !composerHasFocus()) { b.scrollTop = b.scrollHeight; }
+      if (e.target && e.target.tagName === "IMG" && b.__follow !== false && !b.__restoring && !composerHasFocus()) { b.scrollTop = b.scrollHeight; }
     }, true);
   })();
   /* Altura real da janela (o 100dvh falha em PWAs Android e esconde o compositor). */
@@ -3671,6 +3794,8 @@ function esc(s) {
       state.currentChat = d.chat;
       state.activeJob = null;
       state.liveSig = null;
+      state.messageQueue = [];
+      renderQueueStrip();
       setModule("chat");
       refreshChats();
       renderMessages();
@@ -3960,7 +4085,7 @@ function esc(s) {
     if (box.__chatId !== cid) {
       box.__chatId = cid; box.__editing = null; box.__dragging = false; box.__queueSig = null;
     }
-    var sig = state.lang + "|" + state.messageQueue.map(function(item){
+    var sig = state.lang + "|" + (state.queuePolicy || "fifo") + "|" + state.messageQueue.map(function(item){
       return [item.id, item.status, item.reason, item.blocked_by, item.text, item.waiting_on, item.conflict, item.force].join("~");
     }).join("|");
     if (box.__queueSig === sig || box.__editing || box.__dragging || box.__saving) return;
@@ -4079,6 +4204,7 @@ function esc(s) {
       if (res.activity_version < (versions[res.chat.id] || 0)) return false;
       versions[res.chat.id] = res.activity_version;
     }
+    if (res && res.queue_policy) state.queuePolicy = res.queue_policy;
     if (res && Array.isArray(res.queue)) { state.messageQueue = res.queue; renderQueueStrip(); }
     return true;
   }
@@ -4133,7 +4259,10 @@ function esc(s) {
       }
     } else {
       if (btnSend) btnSend.disabled = false;
-      if (state.busyMode === "queue") {
+      if (state.busyMode === "append") {
+        setModeText(btnSend, "append", dualIco("queue","📎") + " " + ui("Juntar à anterior ↵", "Add to previous ↵"));
+        setAlt("append", dualIco("queue","📥") + " " + ui("Meter em Fila", "Queue message"));
+      } else if (state.busyMode === "queue") {
         setModeText(btnSend, "queue", dualIco("queue","📥") + " " + ui("Meter em Fila ↵", "Queue message ↵"));
         setAlt("queue", dualIco("steer","🧭") + " " + ui("Orientar já", "Steer now"));
       } else {
@@ -4157,7 +4286,7 @@ function esc(s) {
 
   if (btnAltBusy) {
     btnAltBusy.onclick = function(){
-      var oppositeMode = (state.busyMode === "queue") ? "steer" : "queue";
+      var oppositeMode = (state.busyMode === "steer") ? "queue" : state.busyMode === "append" ? "queue" : "steer";
       handleComposerSubmit(oppositeMode);
     };
   }
@@ -4419,7 +4548,17 @@ function esc(s) {
 
     if (isCurrentChatBusy()) {
       var modeToUse = overrideBusyMode || state.busyMode || "queue";
-      if (modeToUse === "queue") {
+      if (modeToUse === "append" && !imgs.length && !docs.length && state.currentChat) {
+        var last = (state.messageQueue || []).filter(function(t){ return t.status === 'queued'; }).pop();
+        if (last) {
+          var cidA = state.currentChat.id;
+          api('/api/chat/queue/edit', {id: cidA, task_id: last.id, text: (last.text || '') + '\n\n' + txt, expected_text: last.text}).then(function(res){
+            if (state.currentChat && state.currentChat.id === cidA) { receiveQueue(res); refreshQueue(); }
+          }).catch(function(){ dispatchChatTurn(txt, imgs, proj, eng, false, docs); });
+          return;
+        }
+      }
+      if (modeToUse !== "steer") {
         dispatchChatTurn(txt, imgs, proj, eng, false, docs);
         return;
       } else {
@@ -4478,6 +4617,7 @@ function esc(s) {
 
   function showModernTip(target) {
     var tipText = resolveTipContent(target);
+    if (document.querySelector(".composer-popover:not([hidden]), .sel-menu")) tipText = "";  /* sem tooltip sob um menu aberto */
     if (!tipText) {
       hideModernTip();
       return;
@@ -4528,7 +4668,8 @@ function esc(s) {
   });
   document.addEventListener("keydown", function(e){ if (e.key === "Escape") hideModernTip(); });
   document.addEventListener("scroll", hideModernTip, true);
-  document.addEventListener("mousedown", hideModernTip);
+  document.addEventListener("mousedown", function(){ clearTimeout(tipTimer); hideModernTip(); });
+  document.addEventListener("click", function(){ clearTimeout(tipTimer); hideModernTip(); }, true);
 
   document.getElementById("btnCleanup").onclick = function(){
     api("/api/cleanup", {}).then(function(r){
@@ -5409,6 +5550,8 @@ function esc(s) {
     toastTxt.textContent = state.lang === "en"
       ? "New Maestro AI update (#" + v.hash.slice(0,6) + ") detected." + (busyJob ? " It will apply when the current run finishes." : "")
       : "Nova atualização do Maestro AI (#" + v.hash.slice(0,6) + ") detetada." + (busyJob ? " Aplica-se quando a execução atual terminar." : "");
+    var nowBtn = document.getElementById("btnApplyUpdateNow");
+    if (nowBtn && !state.reloading) nowBtn.textContent = state.lang === "en" ? "Update now" : "Atualizar agora";
     toast.hidden = false;
   }
 
@@ -5534,7 +5677,10 @@ function esc(s) {
           // O utilizador já fechou este aviso; não voltar a abri-lo a cada 10s.
           if (state.autoUpdate && !busyTyping && !busyJob && !document.hidden) {
             state.buildHash = v.hash;
-            state.updateTimer = setTimeout(performSeamlessReload, 1500);
+            state.updateTimer = setTimeout(function(){
+              state.updateTimer = null;
+              if (!isBusyNow()) performSeamlessReload(true);
+            }, 1500);
           }
           return;
         }
@@ -5546,7 +5692,9 @@ function esc(s) {
           state.buildHash = v.hash;
           state.updateTimer = setTimeout(function(){
             state.updateTimer = null;
-            performSeamlessReload();
+            // Entretanto pode ter começado uma execução: nesse caso não recarregar
+            // nem perguntar (o diálogo aparecia sozinho de x em x tempo).
+            if (!isBusyNow()) performSeamlessReload(true);
           }, 3000);
         }
       } else {
@@ -5743,8 +5891,8 @@ function esc(s) {
   // Compact controls share the existing engine and busy-mode state.
   function composerSendTip(alternative) {
     var busy = isCurrentChatBusy();
-    var mode = alternative ? (state.busyMode === 'queue' ? 'steer' : 'queue') : state.busyMode;
-    var action = !busy ? ui('Enviar pedido', 'Send request') : mode === 'steer' ? ui('Orientar agora', 'Steer now') : ui('Meter em fila', 'Queue message');
+    var mode = alternative ? (state.busyMode === 'steer' || state.busyMode === 'append' ? 'queue' : 'steer') : state.busyMode;
+    var action = !busy ? ui('Enviar pedido', 'Send request') : mode === 'steer' ? ui('Orientar agora', 'Steer now') : mode === 'append' ? ui('Juntar à anterior', 'Add to previous') : ui('Meter em fila', 'Queue message');
     var keys = window.innerWidth > 760
       ? ui('Enter: envia · Shift+Enter: nova linha · Ctrl+Enter / ⌘+Enter: envia.', 'Enter: send · Shift+Enter: new line · Ctrl+Enter / ⌘+Enter: send.')
       : ui('Enter: nova linha · Shift+Enter: nova linha · Ctrl+Enter / ⌘+Enter: envia.', 'Enter: new line · Shift+Enter: new line · Ctrl+Enter / ⌘+Enter: send.');
@@ -5759,7 +5907,7 @@ function esc(s) {
     var label = (names[engine] || engine) + (config.effort ? ' · ' + config.effort : '');
     if (engineButton.dataset.label !== label) { engineButton.textContent = label + ' ⌄'; engineButton.dataset.label = label; }
     engineButton.setAttribute('data-tip', ui('Motor e esforço|Escolhe quem executa o próximo pedido e o esforço de raciocínio.', 'Engine and effort|Choose who runs the next request and the reasoning effort.'));
-    document.getElementById('btnComposerMode').textContent = (state.busyMode === 'steer' ? ui('Orientar', 'Steer') : ui('Fila', 'Queue')) + ' ⌄';
+    document.getElementById('btnComposerMode').textContent = (state.busyMode === 'steer' ? ui('Orientar', 'Steer') : state.busyMode === 'append' ? ui('Juntar', 'Append') : ui('Fila', 'Queue')) + ' ⌄';
     document.getElementById('btnComposerMode').setAttribute('data-tip', ui('Durante a execução|Escolhe entre guardar o próximo pedido na fila ou orientar a tarefa em curso. Não altera permissões.', 'While running|Choose whether to queue the next request or steer the running task. Does not change permissions.'));
     document.getElementById('btnSend').setAttribute('aria-description', composerSendTip(false).replace('|', '. '));
     document.getElementById('btnSend').setAttribute('aria-keyshortcuts', 'Control+Enter Meta+Enter' + (window.innerWidth > 760 ? ' Enter' : ''));
@@ -5841,7 +5989,10 @@ function esc(s) {
       var more=document.createElement('button');more.type='button';more.className='composer-panel-action';more.textContent=ui('Modelo e esforço…','Model and effort…');
       more.onclick=function(){closeComposerPanels(false);var b=document.getElementById('wfModelButton');if(b)b.click();};panel.appendChild(more);
     } else {
-      [['queue',ui('Meter em fila','Queue message'),ui('Guarda o pedido; o Maestro agenda quando puder executar.','Saves the request; Maestro schedules it when execution is possible.')],['steer',ui('Orientar agora','Steer now'),ui('Envia instruções adicionais à tarefa em curso.','Sends additional instructions to the running task.')]].forEach(function(row){panel.appendChild(composerChoice(row[1],row[2],state.busyMode===row[0],function(){setBusyMode(row[0]);syncComposerControls();closeComposerPanels(true);}));});
+      [['queue',ui('Meter em fila','Queue message'),ui('Guarda o pedido; o Maestro agenda quando puder executar.','Saves the request; Maestro schedules it when execution is possible.')],['append',ui('Juntar à anterior','Add to previous'),ui('Acrescenta o texto à última mensagem em fila, sem criar outro pedido.','Appends the text to the last queued message instead of creating a new request.')],['steer',ui('Orientar agora','Steer now'),ui('Envia instruções adicionais à tarefa em curso.','Sends additional instructions to the running task.')]].forEach(function(row){panel.appendChild(composerChoice(row[1],row[2],state.busyMode===row[0],function(){setBusyMode(row[0]);syncComposerControls();closeComposerPanels(true);}));});
+      var pl=document.createElement('label');pl.className='queue-policy';pl.title=ui('Como o Maestro ordena os pedidos em espera (todos os chats). Dentro de cada chat mantém-se a ordem de chegada.','How Maestro orders waiting requests (all chats). Arrival order always holds inside a chat.');
+      pl.innerHTML=ui('Ordem da fila','Queue order')+' <select>'+[['fifo',ui('Por chegada','By arrival')],['chat',ui('Um chat de cada vez','One chat at a time')],['short',ui('Mais curtos primeiro','Shortest first')],['auto',ui('Automática','Automatic')]].map(function(o){return '<option value="'+o[0]+'"'+(o[0]===(state.queuePolicy||'fifo')?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>';
+      var ps=pl.querySelector('select');ps.onchange=function(){state.queuePolicy=ps.value;api('/api/queue/policy',{policy:ps.value});};panel.appendChild(pl);
       var note=document.createElement('p');note.className='composer-panel-note';note.textContent=ui('Define a ação de envio enquanto o Maestro está ocupado. As permissões continuam a ser as da sessão real.','Sets the send action while Maestro is busy. Permissions remain those of the actual session.');panel.appendChild(note);
     }
   }
@@ -6015,17 +6166,22 @@ function esc(s) {
   function clip(s, n){ s = String(s || '').replace(/\s+/g,' ').trim(); return s.length > n ? s.slice(0, n-1) + '…' : s; }
   function wide(){ return window.innerWidth > 1080; }
 
+  function normStatus(x){ return !x ? 'pending' : x === 'completed' ? 'done' : x; }
   // Modelo único: vem de um workflow completo ou do resumo (c.subtasks) da lista.
   S.fromWorkflow = function(wf, turn){
     var coord = wf.coordinator && typeof wf.coordinator === 'object' ? (wf.coordinator.label || wf.coordinator.name || '') : (wf.coordinator || '');
     return {turn: turn || wf.turn_id || '', coord: coord || ui('Orquestrador','Orchestrator'), reason: localReason(wf.planning_source) ? '' : (wf.reason || ''), source: wf.planning_source || '', created: wf.created_at, status: wf.status,
       nodes: (wf.nodes || []).filter(function(n, i, a){ return a.findIndex(function(x){ return x.id === n.id; }) === i; }).map(function(n){ var r = n.result || {};
-        return {id:n.id, title:n.title || n.id, status:n.status || 'pending', engine:r.agent_used || n.actual_agent || n.engine || '', model:n.model_id || r.model_id || '',
+        return {id:n.id, title:n.title || n.id, status:normStatus(n.status), engine:r.agent_used || n.actual_agent || n.engine || '', model:n.model_id || r.model_id || '',
           role:n.role, deps:n.depends_on || [], note:n.error || n.reason || '', text:typeof r === 'string' ? r : (r.text || ''), started:n.started_at, finished:n.finished_at, guided:(n.guidance || []).length}; })};
   };
+  // Pedido sem workflow multiagente: plano de um só passo montado a partir de m.plan.
+  S.synth = function(msg){ var p = msg.plan || {};
+    return {turn_id:msg.turn_id, coordinator:p.maestro_name || '', planning_source:'local_capability', reason:p.reason || '', created_at:msg.ts, status:'done',
+      nodes:[{id:'n1', title:(p.agents && p.agents.length ? p.agents.join(' ➔ ') : (p.exec_engine_name || ui('Execução','Execution'))), status:'done', engine:p.exec_engine || '', model_id:p.model_id || '', role:'executor'}]}; };
   S.fromSubtasks = function(tasks){
     return {turn:'', coord:ui('Orquestrador','Orchestrator'), reason:'', source:'', nodes:(tasks || []).map(function(t){
-      return {id:t.node_id, title:t.title, status:t.status, engine:t.engine, model:t.model, role:t.role, deps:t.deps || [], note:'', text:''}; })};
+      return {id:t.node_id, title:t.title, status:normStatus(t.status), engine:t.engine, model:t.model, role:t.role, deps:t.deps || [], note:'', text:''}; })};
   };
 
   S.summary = function(tasks){
@@ -6050,7 +6206,7 @@ function esc(s) {
         var tag = window.mtag ? window.mtag(n.engine, n.model) : '';
         var decision = clip(n.note || n.text, 150);
         return '<div class="st-node" data-id="' + e(n.id) + '" data-status="' + e(n.status) + '"><span class="st-title"><i>' + (ICO[n.status] || '○') + '</i>' + e(n.title) + '</span>' +
-          '<small>' + window.maestroRoleTag(n.role) + ' ' + e(LBL[n.status] || n.status) + (n.engine ? ' · ' + e(clip(n.engine, 24)) : '') + ' ' + tag + '</small>' +
+          '<small>' + window.maestroRoleTag(n.role) + ' ' + e(LBL[n.status] || n.status) + ' ' + tag + '</small>' +
           (decision ? '<small class="st-decision">' + e(decision) + '</small>' : '') + '</div>';
       }).join('') + '</div>';
     });
@@ -6103,44 +6259,77 @@ function esc(s) {
   document.addEventListener('pointerdown',function(ev){ if (!ev.target.closest('#stTip,.st-chip')) S.hideTip(); });
 
   /* ---- painel lateral ---- */
-  var panel, body, openKey = 'maestroStrategyOpen', turn = '', sig = '', thinkNext = false, pendingTurn = '', pendingChat = '';
-  function isOpen(){ return localStorage.getItem(openKey) !== '0'; }
+  var activeEl = null, swTimer = null, panel, body, openKey = 'maestroStrategyOpen', turn = '', sig = '', thinkNext = false, pendingTurn = '', pendingChat = '';
+  function okey(){ return wide() ? openKey : openKey + 'N'; } /* estreito: gaveta, fechada por omissão */
+  function setOpen(v){ localStorage.setItem(okey(), v ? '1' : '0'); }
+  function isOpen(){ var v = localStorage.getItem(okey()); return wide() ? v !== '0' : v === '1'; }
   function current(){
     var st = window.__maestroState || {}, chat = st.currentChat; if (!chat) return null;
     var job = st.activeJob;
     if (job && job.status === 'running' && job.workflow && job.chat_id !== (chat.id)) job = null;
     var list = [];
-    (chat.messages || []).forEach(function(msg){ if (msg.plan && msg.plan.workflow && msg.plan.workflow.nodes) list.push([msg.turn_id || msg.plan.workflow.turn_id || '', msg.plan.workflow]); });
-    // The live snapshot replaces the saved snapshot for the same request.
+    // Chave canónica = turn_id; sem ele, posição na lista ('i:N'), igual à que followScroll calcula.
+    var lastUser = '';
+    (chat.messages || []).forEach(function(msg){ if (msg.role === 'user') lastUser = String(msg.text || '').replace(/\s+/g, ' ').trim();
+      var pw = msg.plan && msg.plan.workflow && msg.plan.workflow.nodes ? msg.plan.workflow : (msg.role === 'assistant' && msg.plan && msg.turn_id ? S.synth(msg) : null);
+      if (pw) {
+      var k = msg.turn_id || pw.turn_id || ('i:' + list.length);
+      list = list.filter(function(x){ return x[0] !== k; }); list.push([k, pw, 0, lastUser]); } });
+    // O snapshot ao vivo substitui o gravado do mesmo pedido (por task_id ou turn_id).
     if (job && job.status === 'running' && job.chat_id === chat.id && job.workflow && job.workflow.nodes) {
       var key = job.task_id || job.workflow.turn_id || 'live';
-      list = list.filter(function(x){ return x[0] !== key; });
-      list.push([key, job.workflow, 1]);
+      list = list.filter(function(x){ return x[0] !== key && x[0] !== job.workflow.turn_id; });
+      list.push([key, job.workflow, 1, lastUser]);
     }
     if (!list.length) return null;
     var wanted = thinkNext && chat.id === pendingChat ? pendingTurn : turn;
     var pick = list.filter(function(x){ return x[0] === wanted || (wanted === 'live' && x[2]); })[0] || list[list.length - 1];
-    return S.fromWorkflow(pick[1], pick[0]);
+    var mm = S.fromWorkflow(pick[1], pick[0]); mm.label = pick[3] || ''; mm.n = list.indexOf(pick) + 1; mm.total = list.length; return mm;
   }
   function followScroll(){
-    var sc = document.getElementById('chatScroll'); if (!sc) return;
-    var mid = sc.getBoundingClientRect(); mid = mid.top + mid.height * 0.5; var best = null, bd = 1e9;
-    sc.querySelectorAll('.wf-panel, .live-workflow').forEach(function(el){
-      var r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
+    var sc = document.getElementById('chatScroll'); if (!sc || sc.__restoring) return; /* a trocar de chat: sem reflows nem trocas de pedido a meio */
+    var vr = sc.getBoundingClientRect(), mid = vr.top + vr.height * 0.5; var best = null, bd = 1e9, bestEl = null;
+    var i = 0, total = 0;
+    sc.querySelectorAll('.wf-panel, .live-workflow, .turn[data-wf-turn]').forEach(function(el){
+      if (!el.matches('.live-workflow') || el.children.length) total++;
       if (el.matches('.live-workflow') && !el.children.length) return;
-      if (d < bd){ var b = el.matches('[data-wf-turn]') ? el : el.querySelector('[data-wf-turn]'); bd = d; best = el.matches('.live-workflow') ? 'live' : (b ? b.getAttribute('data-wf-turn') : ''); }
+      var idx = i++, r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
+      if (r.bottom < vr.top || r.top > vr.bottom) return; // fora do ecrã: o painel não o segue
+      if (r.bottom < vr.top + 120) return; /* segue o primeiro plano ainda à vista */
+      if (bestEl) return;
+      if (d < bd){ var b = el.matches('[data-wf-turn]') ? el : el.querySelector('[data-wf-turn]'), t = b && b.getAttribute('data-wf-turn');
+        bd = d; bestEl = el; best = t || (el.matches('.live-workflow') ? 'live' : 'i:' + idx); }
     });
-    if (best && best !== turn){ turn = best; refresh(); }
+    activeEl = bestEl; var away = !bestEl; if (away !== panel.classList.contains('st-away')){ panel.classList.toggle('st-away', away); sig = ''; if (away){ panel.style.top = ''; panel.style.bottom = ''; panel.style.clipPath = ''; } refresh(); } /* sem plano à vista: o painel fica visível com o aviso, nunca desaparece */
+    if (best && best !== turn){ turn = best; panel.classList.add('st-switching'); clearTimeout(swTimer); swTimer = setTimeout(function(){ panel.classList.remove('st-switching'); }, 450); refresh(); }
+    hideIfNone();
+    place();
+  }
+  /* sem plano neste chat, ou nenhum plano à vista: o painel (e o 🧭) não aparecem */
+  function hideIfNone(){ if (!panel) return; var none = !current() || (wide() && !activeEl); panel.classList.toggle('st-none', none); }
+  // Prende o painel à posição do pedido: acompanha-o ao scroll e fica no topo quando ele sobe.
+  function place(){
+    if (!panel || !activeEl || !isOpen() || !wide()) return;
+    document.querySelectorAll('.st-linked').forEach(function(x){ if (x !== activeEl) x.classList.remove('st-linked'); });
+    activeEl.classList.add('st-linked');
+    /* preso ao pedido: sobe/desce com ele (sem limite), cortado pelas bordas visíveis do chat */
+    var sc = document.getElementById('chatScroll'), vr = sc.getBoundingClientRect(), r = activeEl.getBoundingClientRect(), h = panel.offsetHeight;
+    /* sticky dentro do plano: topo do plano → encosta ao topo do chat enquanto o plano durar → sai com o fundo do plano */
+    var top = Math.min(Math.max(r.top, vr.top + 8), Math.max(vr.top + 8, r.bottom - h));
+    panel.style.bottom = 'auto'; panel.style.top = top + 'px';
+    panel.style.clipPath = 'inset(0 -60px ' + Math.max(0, top + h - vr.bottom) + 'px -60px)';
   }
   function refresh(){
     if (!panel) return;
     var insp = document.getElementById('inspectorRight'), ir = insp ? insp.getBoundingClientRect() : null;
     panel.style.right = ((ir && ir.width > 8) ? window.innerWidth - ir.left + 10 : 10) + 'px';
-    var open = isOpen(); panel.classList.toggle('closed', !open);
+    /* minimalista: só existe quando há um plano à vista (largo) ou plano no chat (gaveta); senão não ocupa nada */
+    /* histerese: vazio/cheio só se aplica depois de se manter ~0,9 s; senão pisca a cada poll, scroll ou troca de pedido */
+    var idleWant = wide() ? false : !current(); /* largo: o painel é sempre visível e a faixa fixa; só a gaveta estreita esvazia */
+    if (idleWant !== panel.classList.contains('st-idle')) panel.classList.toggle('st-idle', idleWant);
+    var idle = panel.classList.contains('st-idle');
+    var open = isOpen() && (!idle || !!panel.__peek); panel.classList.toggle('closed', !open); if (!open){ panel.style.top = ''; panel.style.bottom = ''; panel.style.clipPath = ''; }
     document.body.classList.toggle('st-open', open && wide());
-    var pane = document.getElementById('paneChat');
-    var reserve = open && wide() && pane ? Math.max(0, pane.getBoundingClientRect().right - panel.getBoundingClientRect().left + 12) : 0;
-    document.body.style.setProperty('--st-w', reserve + 'px');
     panel.setAttribute('aria-label', ui('Estratégia do pedido','Request strategy'));
     var toggle = panel.querySelector('#stToggle');
     toggle.setAttribute('aria-expanded', String(open));
@@ -6148,6 +6337,7 @@ function esc(s) {
     toggle.title = ui('Estratégia','Strategy');
     panel.querySelector('header strong').textContent = ui('Estratégia','Strategy');
     panel.querySelector('#stClose').setAttribute('aria-label', ui('Fechar','Close'));
+    hideIfNone();
     window.dispatchEvent(new Event('strategyvisibilitychange'));
     var m = open ? current() : null;
     var highlight = thinkNext && m && m.turn === pendingTurn && (window.__maestroState || {}).currentChat.id === pendingChat;
@@ -6159,12 +6349,14 @@ function esc(s) {
     var evs = [];
     m.nodes.forEach(function(n){ if (n.started) evs.push([n.started, ui('Início · ','Started · ') + n.title]); if (n.finished) evs.push([n.finished, (LBL[n.status] || n.status) + ' · ' + n.title]); if (n.guided) evs.push([n.started || 0, n.guided + ui(' orientação(ões) · ',' guidance update(s) · ') + n.title]); });
     evs.sort(function(a, b){ return a[0] - b[0]; });
-    body.innerHTML = '<section class="st-think' + (highlight ? ' pulse' : '') + '" id="stThink"><h4>💭 ' + ui('Pensamento do orquestrador','Orchestrator thinking') + '</h4><p>' + e(reason(m)) + '</p></section>' +
+    body.innerHTML = '<button type="button" class="st-req" id="stReq" title="' + ui('Ir para este pedido','Go to this request') + '"><small>' + ui('Pedido ','Request ') + m.n + '/' + m.total + '</small><span>' + e((m.label || '').slice(0, 140) || ui('(sem texto)','(no text)')) + '</span></button><section class="st-think' + (highlight ? ' pulse' : '') + '" id="stThink"><h4>💭 ' + ui('Pensamento do orquestrador','Orchestrator thinking') + '</h4><p>' + e(reason(m)) + '</p></section>' +
       S.treeHTML(m) + (evs.length ? '<h4>' + ui('Decisões','Decisions') + '</h4><ol class="st-events">' + evs.slice(-12).map(function(x){ return '<li><time>' + (x[0] ? new Date(x[0] * 1000).toLocaleTimeString(ui('pt-PT','en-GB'), {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '') + '</time> ' + e(x[1]) + '</li>'; }).join('') + '</ol>' : '');
+    var rq = body.querySelector('#stReq'); if (rq) rq.onclick = function(){ if (activeEl) activeEl.scrollIntoView({block:'center', behavior:'smooth'}); };
+    body.classList.remove('st-swap'); void body.offsetWidth; body.classList.add('st-swap');
     S.drawEdges(body);
     if (highlight){ var t = document.getElementById('stThink'); if (t) t.scrollIntoView({block:'nearest'}); thinkNext = false; pendingTurn = ''; pendingChat = ''; }
   }
-  S.open = function(thinking){ localStorage.setItem(openKey, '1'); thinkNext = !!thinking; sig = ''; refresh(); };
+  S.open = function(thinking){ setOpen(true); thinkNext = !!thinking; sig = ''; refresh(); };
   // Apontador: abre o pensamento do orquestrador desse pedido (o chat abre pelo clique da linha).
   S.point = function(requestTurn, chatId){ if (wide()){ pendingTurn = requestTurn || ''; pendingChat = chatId; S.open(true); } };
 
@@ -6173,15 +6365,15 @@ function esc(s) {
     panel.innerHTML = '<button type="button" class="st-toggle" id="stToggle" aria-controls="stBody" aria-expanded="false" aria-label="' + ui('Mostrar ou ocultar a estratégia','Show or hide strategy') + '" title="' + ui('Estratégia','Strategy') + '">🧭</button>' +
       '<div class="st-main"><header><strong>' + ui('Estratégia','Strategy') + '</strong><button type="button" class="st-close" id="stClose" aria-label="' + ui('Fechar','Close') + '">✕</button></header><div class="st-body" id="stBody"></div></div>';
     document.body.appendChild(panel); body = panel.querySelector('#stBody');
-    function close(){ localStorage.setItem(openKey, '0'); thinkNext = false; refresh(); panel.querySelector('#stToggle').focus(); }
+    function close(){ setOpen(false); thinkNext = false; refresh(); panel.querySelector('#stToggle').focus(); }
     panel.querySelector('#stClose').onclick = close;
     panel.addEventListener('keydown',function(ev){ if(ev.key === 'Escape'){ ev.preventDefault(); close(); } });
     if (window.ResizeObserver){ new ResizeObserver(function(){ refresh(); }).observe(document.getElementById('paneChat')); }
-    panel.querySelector('#stToggle').onclick = function(){ if (isOpen()) localStorage.setItem(openKey, '0'); else localStorage.setItem(openKey, '1'); sig = ''; refresh(); };
-    var sc = document.getElementById('chatScroll'); if (sc) sc.addEventListener('scroll', followScroll, {passive:true});
+    panel.querySelector('#stToggle').onclick = function(){ if (panel.classList.contains('st-idle')){ panel.__peek = !panel.__peek; setOpen(true); } else setOpen(!isOpen()); sig = ''; refresh(); };
+    var sc = document.getElementById('chatScroll'); if (sc) var raf=0; sc.addEventListener('scroll', function(){ if(!raf) raf=requestAnimationFrame(function(){ raf=0; followScroll(); }); }, {passive:true});
     window.addEventListener('resize', function(){ sig = ''; refresh(); });
-    setInterval(function(){ if (!document.hidden && wide()){ followScroll(); refresh(); } }, 1500);
-    refresh();
+    setInterval(function(){ if (!document.hidden){ if (wide()) followScroll(); refresh(); } }, 1500);
+    if (wide()) followScroll(); refresh();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
 })();

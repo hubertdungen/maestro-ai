@@ -16,6 +16,8 @@ import time
 
 ROOT = Path.home() / '.local/state/maestro/actions'
 SHELL_BLOCK = re.compile(r'```(?:bash|sh|shell)\n([\s\S]*?)```', re.I)
+# Comandos de PowerShell/Exchange/Azure/Windows nunca correm no bash do NAS.
+NOT_NAS = re.compile(r'(^|\n)\s*(pwsh|powershell|Install-Module|Connect-[A-Z]\w+|(New|Add|Set|Get|Test|Remove)-[A-Z]\w+|az |winget |choco )')
 
 
 def write(path, data):
@@ -35,6 +37,8 @@ def preview(chat, code, cwd):
     code = str(code)
     if not code.strip() or len(code) > 64000:
         raise ValueError('Comando vazio ou demasiado grande')
+    if NOT_NAS.search(code):
+        raise ValueError('Isto é PowerShell/Windows/cloud: corre no teu PC, não no NAS')
     matches = [m for m in chat.get('messages', []) if m.get('role') == 'assistant'
                and code in SHELL_BLOCK.findall(m.get('text', ''))]
     if not matches:

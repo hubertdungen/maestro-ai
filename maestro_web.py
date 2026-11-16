@@ -46,6 +46,7 @@ import maestro_actions as ACTIONS
 import maestro_queue as Q
 import maestro_models as MODELS
 import maestro_workflow as WORKFLOW
+import maestro_qagate as QAGATE
 import maestro_runtime as RUNTIME
 import maestro_efficiency as EFFICIENCY
 import maestro_readonly as READONLY
@@ -189,7 +190,7 @@ def get_build_info() -> dict:
         MAESTRO_DIR / "maestro_gif.py",
         MAESTRO_DIR / "maestro_organizer.py",
         MAESTRO_DIR / "maestro_queue.py",
-        *[MAESTRO_DIR / name for name in ("maestro_activity.py", "maestro_efficiency.py", "maestro_budget.py", "maestro_deepseek_gateway.py", "maestro_models.py", "maestro_model_policy.py", "maestro_table.py", "maestro_workflow.py", "maestro_runtime.py", "maestro_workflow_ui.py", "maestro_readonly.py")],
+        *[MAESTRO_DIR / name for name in ("maestro_activity.py", "maestro_efficiency.py", "maestro_budget.py", "maestro_deepseek_gateway.py", "maestro_models.py", "maestro_model_policy.py", "maestro_table.py", "maestro_workflow.py", "maestro_runtime.py", "maestro_workflow_ui.py", "maestro_readonly.py", "maestro_qagate.py")],
         MAESTRO_DIR / "maestro.py",
         SVG_PATH,
         ICO_PATH,
@@ -224,7 +225,7 @@ def start_hot_reload_watcher() -> None:
         MAESTRO_DIR / "maestro_features.py",
         MAESTRO_DIR / "maestro_organizer.py",
         MAESTRO_DIR / "maestro_queue.py",
-        *[MAESTRO_DIR / name for name in ("maestro_activity.py", "maestro_efficiency.py", "maestro_budget.py", "maestro_deepseek_gateway.py", "maestro_models.py", "maestro_model_policy.py", "maestro_table.py", "maestro_workflow.py", "maestro_runtime.py", "maestro_workflow_ui.py", "maestro_readonly.py")],
+        *[MAESTRO_DIR / name for name in ("maestro_activity.py", "maestro_efficiency.py", "maestro_budget.py", "maestro_deepseek_gateway.py", "maestro_models.py", "maestro_model_policy.py", "maestro_table.py", "maestro_workflow.py", "maestro_runtime.py", "maestro_workflow_ui.py", "maestro_readonly.py", "maestro_qagate.py")],
         MAESTRO_DIR / "maestro.py",
     ]
     initial_mtimes = {}
@@ -800,7 +801,10 @@ def build_conversation_prompt(chat: dict, user_text: str, images: list[str], pla
         "Resumos antigos como 'aguardo OK' ou 'só leitura' não revogam autorizações posteriores nem as ferramentas desta execução.\n"
         "Se existir um bloqueio real, tenta primeiro resolvê-lo com as ferramentas e informação disponíveis. "
         "Só pede a informação ou decisão indispensável que falta, identificando o bloqueio concreto e preservando o objetivo para continuar. "
-        "Não inventes resultados nem declares uma correção validada apenas porque alteraste o prompt.\n\n"
+        "Não inventes resultados nem declares uma correção validada apenas porque alteraste o prompt.\n"
+        "Entrega completa: a entrega é o pedido inteiro (as duas bolas e o topping), sem dividir em fases nem terminar com perguntas de permissão "
+        "(«diz-me onde», «queres que», «aguardo»). Os achados de uma revisão/QA são trabalho do teu próprio turno, não um relatório para o Hubert: corrige-os e repete a validação. "
+        "Em pedidos grandes, o âmbito completo pedido é o mínimo aceitável; um MVP ou 'pendente' não é entrega. O Maestro recusa respostas que se declarem incompletas e devolve-as para correção.\n\n"
         f"MENSAGEM ATUAL DO HUBERT:\n{user_text}"
         f"{img_block}"
     )
@@ -1680,6 +1684,19 @@ def start_async_chat_job(chat: dict, eng_key: str, full_prompt: str, user_text: 
             was_stopped = job.get("status") == "stopped"
         if was_stopped and job.get("stop_reason") == "steer":
             return
+        if task_id and not failed and not was_stopped and not plan.get("read_only"):
+            _cur = next((t for t in TURN_QUEUE.tasks if t["id"] == task_id), None) or {}
+            _hits = QAGATE.check(res.get("text"))
+            if _hits:
+                _n = _cur.get("qa_cycles", 0)
+                if _n < QAGATE.MAX_CYCLES:
+                    # Reuses the queue's requeue path (same as auto-retry): back to dev with the findings, QA repeats in the next turn.
+                    TURN_QUEUE.update(task_id, status="queued", reason="evaluating", qa_cycles=_n + 1, assigned_engine=None,
+                                      qa_findings=QAGATE.redo_note(res.get("text"), _n + 1))
+                    with JOBS_LOCK:
+                        job.update(status="done", current_step="🔁 Porta de qualidade: de volta à implementação", finished_at=time.time())
+                    return
+                res["text"] = str(res.get("text") or "") + QAGATE.exhausted_note(_hits)
         with CHAT_STORAGE_LOCK:
             latest_chat = load_chat(cid) or chat
             message = {"role": "assistant", "text": res["text"], "agent_used": res["agent_used"],
@@ -1772,7 +1789,7 @@ def chat_activity_snapshot(chat_id):
                                 if m.get('turn_id') not in waiting]
         return {'chat': chat, 'job': job,
                 'running': bool(job and job['status'] == 'running'),
-                'queue': queue, 'activity_version': time.monotonic_ns()}
+                'queue': queue, 'queue_policy': queue_policy(), 'activity_version': time.monotonic_ns()}
 
 
 def chat_subtasks(chat):
@@ -1859,12 +1876,25 @@ def _llm_independent(task, others):
     return Q.triage_independent(task, running_tasks + [o for o in others if o['id'] != task['id']], claude_bin, _sentinel_fallback)
 
 
+POLICY_PATH = M.STATE_DIR / "queue-policy.json"
+
+
+def queue_policy():
+    try:
+        p = json.loads(POLICY_PATH.read_text()).get('policy')
+        return p if p in Q.POLICIES else 'fifo'
+    except (OSError, ValueError, AttributeError):
+        return 'fifo'
+
+
 def schedule_turns_once():
     with TURN_QUEUE.lock:
         mutation_version = TURN_QUEUE.mutation_version
         positions = {t['id']: i for i, t in enumerate(TURN_QUEUE.tasks)}
         pending = [dict(t) for t in TURN_QUEUE.tasks if t['status'] == 'queued']
         interrupted = [dict(t) for t in TURN_QUEUE.tasks if t['status'] == 'interrupted' and not t.get('gave_up')]  # a request that gave up must not hold the rest of the chat
+        running_chats = {t['chat_id'] for t in TURN_QUEUE.tasks if t['status'] == 'running'}
+    pending = Q.order_pending(pending, positions, running_chats, queue_policy())
     blocked_chats = set()
     for task in pending:
         cid = task['chat_id']
@@ -2044,6 +2074,8 @@ def dispatch_turn(body):
             '\n'.join('- ' + n for n in body['failure_notes']) +
             '\nNão repitas o mesmo método. Analisa a causa, muda a abordagem (outra ferramenta, passos mais pequenos, outro caminho) e adapta o plano como achares necessário. '
             'Com bom senso: se concluíres que é impossível ou desproporcionado, diz claramente porquê e propõe alternativas em vez de insistir.')
+    if body.get('qa_findings') and not is_steer:
+        effective_user_text += body['qa_findings']
     if plan.get('write_paths'):
         effective_user_text += ('\n[Âmbito de escrita reservado para este plano: ' + ', '.join(plan['write_paths']) +
                                 '. Outros planos podem estar ativos nesta pasta. Altera apenas estes ficheiros; '
@@ -2727,6 +2759,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._reply(200, dict(chat_activity_snapshot(cid), ok=True))
             except ValueError as exc:
                 return self._reply(409, {'error': str(exc)})
+
+        if u.path == "/api/queue/policy":
+            if body.get("policy") in Q.POLICIES:
+                POLICY_PATH.write_text(json.dumps({"policy": body["policy"]}))
+            return self._reply(200, {"ok": True, "policy": queue_policy()})
 
         if u.path == "/api/chat/queue/cancel":
             task_id = str(body.get("task_id") or "")
