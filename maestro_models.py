@@ -170,6 +170,8 @@ def catalog(quotas=None, refresh=False):
             if family == 'deepseek' and e.get('transport') != 'deepseek-api' and q.get('budget', {}).get('cli_allowed') is False:
                 blocked = True
                 e['note'] = 'CLI sem teto verificável; usar API com orçamento. '+e['note']
+            if family == 'deepseek' and q.get('budget', {}).get('available') is False:
+                e['automatic_available'] = False
             if blocked:
                 e.update(available=False, note='Quota do fornecedor indisponível. '+e['note'])
             if e['engine'] == 'opus':
@@ -188,6 +190,20 @@ def resolve(model_id, effort=None, quotas=None):
     if effort and effort not in entry['efforts']:
         raise ValueError('Nível de esforço não suportado por este modelo')
     return dict(entry, effort=effort or entry['default_effort'])
+
+
+def readonly_claude_args():
+    """Read-only Claude worker: file tools plus inspection commands (git history/diff and the page checker).
+
+    dontAsk denies everything that is not pre-approved, so writes and any other command stay blocked.
+    """
+    here = pathlib.Path(__file__).resolve().parent
+    files = 'Read,Glob,Grep,WebSearch,WebFetch'
+    shell = ','.join('Bash(%s:*)' % c for c in ('git status', 'git diff', 'git log', 'git show',
+                                               'python3 ' + str(here / 'tools' / 'ver.py')))
+    return ['--tools', files + ',Bash', '--allowedTools', files + ',' + shell,
+            '--add-dir', '/srv/cloud4tb/WORK/DEVELOPMENT', '--add-dir', str(here),
+            '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--permission-mode', 'dontAsk']
 
 
 def command_config(selection, read_only=False):
@@ -214,9 +230,7 @@ def command_config(selection, read_only=False):
         if read_only:
             # dontAsk nega tudo o que não esteja pré-aprovado (e pastas fora do projeto): aprovar só leitura
             # e dar as mesmas pastas que o modo de escrita, senão o scout fica «Bloqueado».
-            args += ['--tools', 'Read,Glob,Grep,WebSearch,WebFetch', '--allowedTools', 'Read,Glob,Grep,WebSearch,WebFetch',
-                     '--add-dir', '/srv/cloud4tb/WORK/DEVELOPMENT', '--add-dir', str(pathlib.Path(__file__).resolve().parent),
-                     '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--permission-mode', 'dontAsk']
+            args += readonly_claude_args()
     elif engine == 'agy':
         args = ['--model', model]
     if read_only and not e['read_only_enforced']:

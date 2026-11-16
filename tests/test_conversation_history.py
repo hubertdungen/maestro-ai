@@ -49,6 +49,15 @@ class ConversationHistoryTests(unittest.TestCase):
         self.assertIn('confirma que a alteração concreta aparece em produção', result)
         self.assertIn('bloqueio real', result)
 
+    def test_every_earlier_request_stays_in_the_ledger_and_replies_keep_their_ending(self):
+        messages = [{'role': 'user', 'text': f'pedido antigo número {i} sobre o tema {i}'} for i in range(25)]
+        messages += [{'role': 'assistant', 'text': 'Início. ' + 'meio ' * 800 + 'Ficou por publicar o PR 7.'}]
+        result = self.prompt(messages, text='continua')
+        for i in range(16):
+            self.assertIn(f'pedido antigo número {i} ', result)
+        self.assertIn('Ficou por publicar o PR 7.', result)
+        self.assertIn('contrato de entrega'.upper(), result)
+
     def test_older_context_is_bounded_and_chat_path_sanitized(self):
         messages = [{'role': 'user', 'text': 'parcerias ' + 'x' * 50000} for _ in range(30)]
         result = self.prompt(messages, chat_id='../chat-safe')

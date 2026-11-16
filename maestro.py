@@ -751,9 +751,10 @@ def choose_active_maestro(force_substitute: bool = False) -> dict:
     agy = get_antigravity_status()
     codex = get_codex_quota()
     claude = get_claude_quota()
-    live_blocked = codex.get("source") == "wham_live" and (
-        (codex.get("pace_blocked") is True and codex.get("pace_status") != "desconhecido")
-        or codex.get("limit_reached") is True)
+    # O orçamento diário/semanal (pace_blocked) trava a execução de trabalho
+    # pesado no Codex, mas não a orquestração: o Maestro só cede perante um
+    # limite real confirmado (limit_reached) ou a janela de 5h quase cheia.
+    live_blocked = codex.get("source") == "wham_live" and codex.get("limit_reached") is True
     if not force_substitute and codex["five_hour_est_pct"] < 85 and not live_blocked:
         return {
             "engine": "codex",

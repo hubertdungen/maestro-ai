@@ -80,8 +80,22 @@ class ExecutionSlots:
                 self.condition.notify_all()
 
 
+def execution_scope(plan, cwd):
+    """What a run locks while it executes: explicit files, else the turn's own scope when the
+    scheduler admitted it as an independent parallel writer, else the whole project folder."""
+    return plan.get('write_paths') or plan.get('exec_scope') or str(pathlib.Path(cwd).resolve())
+
+
 def normalized(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text.lower()) if not unicodedata.combining(c))
+
+
+MUTATION = r'\b(corrig\w*|altera\w*|implement\w*|apaga\w*|instala\w*|reinicia\w*|cria\w*|muda\w*|adicion\w*|acrescent\w*|arranja\w*|melhora\w*|publica\w*|faz\w*|fix|edit|change|write|delete|deploy|restart|create|add|build|improve)\b'
+
+
+def wants_changes(text):
+    """The request asks for work to be done, not only for an explanation."""
+    return bool(re.search(MUTATION, normalized(text or '')))
 
 
 def independent_analysis(task):
@@ -409,9 +423,11 @@ _TRIAGE_CACHE = {}
 TRIAGE_PROMPT = (
     "Triagem de uma fila de pedidos a um assistente de sysadmin/programação. Pedido NOVO:\n<<{new}>>\n\n"
     "Pedidos ainda a correr ou à frente dele na fila:\n{others}\n\n"
-    "O pedido NOVO pode correr JÁ em paralelo, noutro agente? Só se não depender da resposta/resultado "
-    "dos outros (não é um 'avança', 'sim', 'e isso?', 'resolve', não retoma o mesmo assunto) e não mexer "
-    "nos mesmos ficheiros, serviços ou discos. Responde só uma palavra: PARALELO ou ESPERAR."
+    "O pedido NOVO pode correr JÁ em paralelo, noutro agente? Sim, se tratar de outra app, site, repositório "
+    "ou serviço, ou se for só uma pergunta/leitura. Não, se depender da resposta/resultado dos outros "
+    "(um 'avança', 'sim', 'e isso?', 'resolve', ou retoma o mesmo assunto) ou se alterar a mesma app, o mesmo "
+    "repositório ou o mesmo serviço que eles. Partilhar o mesmo servidor ou disco não impede o paralelo. "
+    "Responde só uma palavra: PARALELO ou ESPERAR."
 )
 
 

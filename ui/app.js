@@ -2375,8 +2375,14 @@ function esc(s) {
     if (upBtn) upBtn.addEventListener("click", function(){
       var t = pendingAttentionTarget();
       if (t) {
+        /* Sem scroll suave: o render do turno ao vivo (a cada ~1 s) reescrevia o
+           scrollTop a meio da animação e o chat saltava para o fim. */
+        noteChatIntent();
         setChatFollow(false);
-        t.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+        if (_autoScrollRaf) window.cancelAnimationFrame(_autoScrollRaf);
+        _autoScrollRaf = 0; _smoothUntil = 0;
+        var br = box.getBoundingClientRect(), tr = t.getBoundingClientRect();
+        box.scrollTo({ top: Math.max(0, box.scrollTop + tr.top - br.top - (box.clientHeight - tr.height) / 2), behavior: 'instant' });
         if (!t.matches('button, input, textarea')) t = t.querySelector('button:not(:disabled), input, textarea') || t;
         if (t.focus) t.focus({ preventScroll: true });
       }
@@ -6376,4 +6382,25 @@ function esc(s) {
     if (wide()) followScroll(); refresh();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+})();
+
+/* Pensamentos do orquestrador: sondagem leve, só com o popover aberto ou a fila ocupada. */
+(function(){
+  var box=document.getElementById("orchBrain"); if(!box) return;
+  var lastKey="";
+  function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  function ago(ts){var s=Math.max(0,Date.now()/1000-ts);return s<60?"agora":s<3600?Math.floor(s/60)+" min":Math.floor(s/3600)+" h";}
+  function load(){
+    fetch("/api/orchestrator/thoughts",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+      box.classList.toggle("busy",!!d.busy);
+      document.getElementById("obNow").textContent=d.now;
+      var key=JSON.stringify(d.thoughts.map(function(t){return t.ts;}));
+      if(key===lastKey) return; lastKey=key;
+      document.getElementById("obList").innerHTML=d.thoughts.length?d.thoughts.map(function(t,i){
+        return '<div class="ob-th" style="animation-delay:'+(i*40)+'ms"><span class="t">'+t.icon+'</span><span><b>'+esc(t.text)+'</b><small>'+esc(t.chat)+' · «'+esc(t.req)+'» · '+ago(t.ts)+'</small></span></div>';
+      }).join(""):'<div class="ob-th"><span class="t">😴</span><span><b>Sem decisões recentes</b></span></div>';
+    }).catch(function(){});
+  }
+  load(); setInterval(function(){ if(!document.hidden) load(); },4000);
+  box.addEventListener("mouseenter",load);
 })();

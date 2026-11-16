@@ -24,6 +24,9 @@ RED_RESERVE = .20
 PRICING_SOURCE = 'https://api-docs.deepseek.com/quick_start/pricing/'
 
 
+HEADROOM = .1
+
+
 def daily_limit(daily, necessity='normal'):
     return daily + {'normal': 0, 'essential': YELLOW_EXTRA-RED_RESERVE,
                     'critical': YELLOW_EXTRA}.get(necessity, 0)
@@ -58,7 +61,9 @@ def _snapshot(data, now):
     today = data['days'].get(now.date().isoformat(), 0)
     return dict(cap_eur=CAP, daily_eur=round(daily, 6), spent_eur=round(spent, 6),
                 today_eur=round(today, 6), remaining_eur=round(max(0, CAP-spent), 6),
-                available=spent < CAP-1e-9 and today < daily-1e-9 and now.date() <= RATES_VALID_UNTIL,
+                # Reservations are conservative: with under 10% of the day left the next request is refused,
+                # so the engine must stop being offered before that (it failed 44 times as "available").
+                available=spent < CAP-1e-9 and today < daily*(1-HEADROOM) and now.date() <= RATES_VALID_UNTIL,
                 reserve_available=spent < CAP-1e-9 and today < daily+YELLOW_EXTRA-RED_RESERVE-1e-9 and now.date() <= RATES_VALID_UNTIL,
                 critical_available=spent < CAP-1e-9 and today < daily+YELLOW_EXTRA-1e-9 and now.date() <= RATES_VALID_UNTIL,
                 cycle_start=start.isoformat(), reset_at=end.isoformat(),

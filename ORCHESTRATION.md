@@ -93,3 +93,21 @@ falharem, a fila espera localmente e volta a tentar noutra passagem; erros não 
 em cache. A cache inclui o texto para invalidar decisões após editar um pedido.
 O catálogo de funções está em «Funções e tags» na Tabela do Maestro. Os títulos de
 conversas continuam a ter a sua alternativa local existente.
+
+
+## Entrega fechada no mesmo turno (16 novembro, revisão de arquitetura)
+
+Revisão feita sobre 8 conversas, 476 execuções, 299 turnos e 36 planos. O que os dados mostraram e o que mudou:
+
+| Evidência | Causa no código | Alteração |
+|---|---|---|
+| 25 de 36 planos entregavam como resposta o texto de um revisor só de leitura; 18 de 26 revisões declaravam não ter shell | o nó terminal do DAG era a revisão; os executores dos planos não recebiam as regras de entrega | os achados da revisão voltam ao implementador **dentro do mesmo turno** (nó `entrega`, acrescentado ao plano persistido); um pedido de alteração nunca termina num plano só de leitura; todos os nós recebem o pedido original e os de escrita o contrato de entrega |
+| os 5 turnos com plano que entraram na porta de qualidade esgotaram 3/3 ciclos | a recusa devolvia o turno à fila, que reabria o plano já concluído e devolvia o mesmo texto | `quality_gate` corre a correção no próprio trabalho, com um motor de escrita e o prompt completo; o turno não volta à fila |
+| 71 de 304 respostas acabavam a pedir autorização; 167 admitiam não ter visto o resultado; 88 mandavam fazer Ctrl+F5 | o prompt convidava a propor comandos para «Autorizar e avançar» e não havia forma de ver uma página | `maestro_qagate.CONTRACT` (um só texto para turnos, planos e correções) e `tools/ver.py` (captura PNG + texto no DOM renderizado, desktop ou telemóvel) |
+| 55 turnos admitidos como `parallel_write`, mas 98 % do tempo com um só worker | depois de admitido, o turno ficava preso em `ExecutionSlots` atrás da pasta partilhada (`~`) | o turno admitido em paralelo recebe âmbito próprio (`exec_scope`); irmãos do mesmo plano continuam com escrita exclusiva; o Sentinel deixa de tratar «mesmo disco» como conflito |
+| 44 falhas «orçamento diário/mensal insuficiente»; 11 planeamentos falhados num dia | DeepSeek contava como disponível com a verba do dia quase esgotada | `available` exige 10 % de folga diária; sem verba normal sai do planeamento, dos scouts e das escolhas automáticas |
+| «Então eu não te pedi há pouco…?» | só 3 pedidos antigos entravam no prompt; respostas cortadas pelo início | registo de uma linha para todos os pedidos anteriores; as respostas recentes mantêm o início e o fim |
+
+Revisores e scouts em Claude passam a ter Bash limitado a inspeção: `git status|diff|log|show` e `tools/ver.py`. Verificado com uma chamada real: escrita direta e escrita encadeada atrás de um prefixo permitido são negadas pelo modo `dontAsk`.
+
+Limites conhecidos: a porta de qualidade continua a ler texto (regex PT), não o estado real do repositório; o classificador de domínio/dimensão continua por palavras-chave e contagem de palavras; pedidos seguidos no mesmo chat sobre a mesma app continuam em série, por desenho.
