@@ -71,6 +71,19 @@ class RepoStateTests(unittest.TestCase):
             self.assertNotIn('outro.py', found[0])
             self.assertEqual(G.repo_findings('Mudei a cor do botão.', '/tmp', self.since), [])
 
+    def test_clean_repository_beats_alarming_words(self):
+        calls = []
+        job = dict(status='running', t0=self.since, steps=[])
+        reply = 'Commit feito e enviado em %s. Não fiz commit do __pycache__, que é lixo gerado.' % self.repo
+        with patch.object(web.TURN_QUEUE, 'update'):
+            result = web.quality_gate(dict(text=reply, rc=0, tools=[], plan={}), 'sonnet', 'PROMPT', 'cria o ficheiro', '/tmp', [], {},
+                                      'nas', job, 'turn', run=lambda *a, **k: calls.append(1))
+        self.assertEqual(calls, [])                 # nothing left in git: no second run
+        self.assertEqual(result['text'], reply)
+        # Without a repository to check, the words still count.
+        self.assertTrue(G.git_wording(G.check('Não fiz commit nem PR.')))
+        self.assertEqual(G.named_repos('Não fiz commit nem PR.', '/tmp'), [])
+
     def test_request_to_keep_it_local_is_respected(self):
         (self.repo / 'novo.py').write_text('x = 1')
         self.assertEqual(G.repo_findings('ok', str(self.repo), self.since, 'altera isto mas não faças commit'), [])

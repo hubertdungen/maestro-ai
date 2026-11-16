@@ -1780,7 +1780,12 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
     for cycle in range(1, QAGATE.MAX_CYCLES + 1):
         # Text says what the engine claims; the repositories say what it really left behind.
         seen, repos = repos, QAGATE.repo_findings(res.get("text"), cwd, job["t0"], user_text)
-        hits = QAGATE.check(res.get("text"), user_text) + repos
+        hits = QAGATE.check(res.get("text"), user_text)
+        if not repos and QAGATE.git_wording(hits) and QAGATE.named_repos(res.get("text"), cwd):
+            # Reality over wording: the repositories it worked on are committed and pushed, so a sentence
+            # like "não commitei o __pycache__" is not unfinished work.
+            hits = [h for h in hits if h not in QAGATE.git_wording(hits)]
+        hits += repos
         if cycle > 1 and hits == repos == seen:
             break  # the maker looked and left those files on purpose: do not ask a third time
         if not hits or cycle == QAGATE.MAX_CYCLES or job.get("status") == "stopped":
