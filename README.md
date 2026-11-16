@@ -4,7 +4,7 @@
 <p align="center"><a href="README.pt-PT.md">🇵🇹 Português</a> · <a href="#features">Features</a> · <a href="#the-strategy-panel">Strategy panel</a> · <a href="#themes-worlds">Themes</a> · <a href="#quick-start">Quick start</a> · <a href="ORCHESTRATION.md">Design</a></p>
 <p align="center"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"/> <img alt="License" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0-blue"/> <img alt="Engines" src="https://img.shields.io/badge/engines-Claude%20%C2%B7%20Codex%20%C2%B7%20Gemini%20%C2%B7%20DeepSeek-8A2BE2"/> <img alt="PWA" src="https://img.shields.io/badge/PWA-desktop%20%C2%B7%20tablet%20%C2%B7%20phone-0A7"/></p>
 
-<p align="center"><img src="docs/screenshots/maestro-desktop.jpg" width="900" alt="Maestro AI"/></p>
+<p align="center"><img src="docs/screenshots/maestro-hero.jpg" width="900" alt="Maestro AI: chat, live agent tree and quotas"/></p>
 
 > **License:** source-available, not open source. Free for personal, study, research and hobby use under [PolyForm Noncommercial 1.0.0](LICENSE). Commercial use needs a paid licence — see [COMMERCIAL.md](COMMERCIAL.md) (reference price: €100 in Europe).
 

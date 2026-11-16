@@ -4,7 +4,7 @@
 <p align="center"><a href="README.md">🇬🇧 English</a> · <a href="#funcionalidades">Funcionalidades</a> · <a href="#o-painel-estratégia">Painel Estratégia</a> · <a href="#temas-mundos">Temas</a> · <a href="#início-rápido">Arranque rápido</a> · <a href="ORCHESTRATION.md">Desenho</a></p>
 <p align="center"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"/> <img alt="Licença" src="https://img.shields.io/badge/licen%C3%A7a-PolyForm%20NC%201.0-blue"/> <img alt="Motores" src="https://img.shields.io/badge/motores-Claude%20%C2%B7%20Codex%20%C2%B7%20Gemini%20%C2%B7%20DeepSeek-8A2BE2"/> <img alt="PWA" src="https://img.shields.io/badge/PWA-computador%20%C2%B7%20tablet%20%C2%B7%20telem%C3%B3vel-0A7"/></p>
 
-<p align="center"><img src="docs/screenshots/maestro-desktop.jpg" width="900" alt="Maestro AI"/></p>
+<p align="center"><img src="docs/screenshots/maestro-hero.jpg" width="900" alt="Maestro AI: chat, live agent tree and quotas"/></p>
 
 > **Licença:** código disponível, não open source. Gratuito para uso pessoal, estudo, investigação e lazer sob [PolyForm Noncommercial 1.0.0](LICENSE). O uso comercial exige licença paga — ver [COMMERCIAL.md](COMMERCIAL.md) (preço de referência: 100 € na Europa).
 
