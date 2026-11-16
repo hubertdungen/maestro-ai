@@ -1885,7 +1885,7 @@ function esc(s) {
       var updates = events.filter(function(e) { return e.kind === 'update' && String(e.text || '').trim(); });
       var currentText = updates.length ? updates[updates.length - 1].text : ui('À espera de uma atualização do motor…', 'Waiting for an engine update…');
       var current = progress.querySelector('.live-progress-current');
-      if (current.textContent !== currentText) current.textContent = currentText;
+      if (current.__src !== currentText) { current.__src = currentText; current.innerHTML = renderRichMarkdown(currentText); }
       progress.querySelector('.live-progress-hint').textContent = ui('Histórico de progresso', 'Progress history') + (updates.length ? ' · ' + updates.length : '');
       var updatesSig = JSON.stringify(updates);
       var updateList = progress.querySelector('.live-progress-updates');
@@ -1893,8 +1893,8 @@ function esc(s) {
         progress.__updatesSig = updatesSig;
         updateList.replaceChildren();
         updates.forEach(function(e) {
-          var row = document.createElement('p');
-          row.textContent = e.text;
+          var row = document.createElement('div');
+          row.innerHTML = renderRichMarkdown(e.text);
           updateList.appendChild(row);
         });
         updateList.scrollTop = updateList.scrollHeight;

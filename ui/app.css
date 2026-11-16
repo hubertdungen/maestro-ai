@@ -1013,12 +1013,14 @@ code.inline-code {
 .live-progress > summary::-webkit-details-marker { display: none; }
 .live-progress > summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
 .live-progress-label { display: block; color: var(--cyan); font: .72rem/1.6 var(--mono); }
-.live-progress-current { display: block; margin: 6px 0; color: var(--text); font-size: .84rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.live-progress-current { display: block; margin: 6px 0; color: var(--text); font-size: .84rem; line-height: 1.6; overflow-wrap: anywhere; }
+.live-progress-current .rich-p:first-child, .live-progress-updates .rich-p:first-child { margin-top: 0; }
+.live-progress-current .rich-p:last-child, .live-progress-updates .rich-p:last-child { margin-bottom: 0; }
 .live-progress-hint { display: flex; align-items: center; gap: 6px; color: var(--muted); font: .66rem/1.6 var(--mono); }
 .live-progress-hint::before { content: ""; width: 5px; height: 5px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); transition: transform .25s ease; }
 .live-progress[open] .live-progress-hint::before { transform: rotate(45deg); }
-.live-progress-updates { margin-top: 10px; padding-top: 2px; border-top: 1px solid var(--line); max-height: 250px; overflow-y: auto; overflow-wrap: anywhere; white-space: pre-wrap; font-size: .8rem; line-height: 1.6; }
-.live-progress-updates p { margin: 10px 0; }
+.live-progress-updates { margin-top: 10px; padding-top: 2px; border-top: 1px solid var(--line); max-height: 250px; overflow-y: auto; overflow-wrap: anywhere; font-size: .8rem; line-height: 1.6; }
+.live-progress-updates > div { margin: 10px 0; }
 .live-progress-note { margin: 8px 0; color: var(--muted); font-size: .68rem; line-height: 1.5; }
 @media (prefers-reduced-motion: reduce) { .live-progress::before { animation: none; opacity: .35; } .live-progress-hint::before { transition: none; } }
 .live-activity summary { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 28px; }
