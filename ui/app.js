@@ -5765,8 +5765,10 @@ function esc(s) {
         markUpdateAvailable(v.hash);
         if (dismissed === v.hash) {
           // O utilizador já fechou este aviso; não voltar a abri-lo a cada 10s.
-          if (state.autoUpdate && !busyTyping && !busyJob && !document.hidden) {
-            state.buildHash = v.hash;
+          /* A versão só conta como aplicada quando a página recarrega mesmo. Antes marcava-se aqui:
+             se um pedido arrancasse nesse segundo, a recarga era saltada e nunca mais se tentava,
+             e a janela ficava para sempre com o código antigo. */
+          if (state.autoUpdate && !busyTyping && !busyJob && !document.hidden && !state.updateTimer) {
             state.updateTimer = setTimeout(function(){
               state.updateTimer = null;
               if (!isBusyNow()) performSeamlessReload(true);
@@ -5779,7 +5781,6 @@ function esc(s) {
         // NUNCA recarregar a página a meio de uma execução nem com a app em
         // segundo plano: isso cortava o scroll, o acompanhamento e o trabalho.
         if (state.autoUpdate && !busy && !document.hidden && !state.updateTimer) {
-          state.buildHash = v.hash;
           state.updateTimer = setTimeout(function(){
             state.updateTimer = null;
             // Entretanto pode ter começado uma execução: nesse caso não recarregar
