@@ -380,3 +380,28 @@ class SentinelFallbackTests(unittest.TestCase):
         with patch.object(W.M, '_extract_deepseek_key', return_value='fake'), patch.object(W.READONLY, '_request', return_value={'choices':[{'message':{'content':'PARALELO'}}]}) as req:
             self.assertEqual(W._sentinel_fallback('triage prompt'), 'PARALELO')
         self.assertEqual(req.call_args.args[3]['max_tokens'], 16)
+
+
+class ParallelScopeTests(unittest.TestCase):
+    def test_parallel_writer_admitted_by_the_scheduler_is_not_parked_behind_the_home_folder(self):
+        import threading
+        slots = Q.ExecutionSlots()
+        home = Q.execution_scope({}, '/home/hubert')
+        own = Q.execution_scope({'exec_scope': 'turno:abc'}, '/home/hubert')
+        entered = threading.Event()
+        with slots.hold(False, engine='sonnet', scope=home):
+            def second():
+                with slots.hold(False, engine='codex', scope=own):
+                    entered.set()
+            worker = threading.Thread(target=second, daemon=True)
+            worker.start()
+            self.assertTrue(entered.wait(2), 'the independent writer waited for the first one')
+            worker.join(2)
+
+    def test_same_turn_and_default_scopes_still_exclude_each_other(self):
+        self.assertTrue(Q.scopes_overlap('turno:abc', 'turno:abc'))       # workflow siblings: one writer at a time
+        self.assertTrue(Q.scopes_overlap('/home/hubert', '/home/hubert/Rumo'))
+        self.assertEqual(Q.execution_scope({'write_paths': ['/a/b.py'], 'exec_scope': 'turno:x'}, '/a'), ['/a/b.py'])
+        self.assertIn('repositório', Q.TRIAGE_PROMPT)
+        self.assertTrue(Q.wants_changes('Implementa e valida'))
+        self.assertFalse(Q.wants_changes('Explica como funciona a fila'))

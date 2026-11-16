@@ -26,8 +26,9 @@ function chatScrollBox(){return box;}
 const classes = new Set(); const count = {};
 const up = {classList:{toggle:(k,v)=>v?classes.add(k):classes.delete(k)},
   setAttribute:(k,v)=>up[k]=v, querySelector:()=>count};
-const document = {getElementById:()=>up};
+const document = {getElementById:id=>id==='btnJumpUp'?up:null};
 function ui(pt,en){return en;}
+function bulkMsgs(){return [];}
 '''
         checks = r'''
 controls = [control(20),control(80),control(300)];

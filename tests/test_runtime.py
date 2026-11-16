@@ -147,9 +147,49 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(call['engine'],'opus')
         self.assertEqual(call['plan']['model_id'],'opus:opus')
 
+    def test_review_findings_return_to_the_maker_in_the_same_turn(self):
+        replies = {'review': 'Veredicto: NÃO APROVADO. Não tinha shell para validar. A corrigir: linha 4.'}
+        base = self.execute
+        def execute(engine, prompt, instruction, cwd, images, plan, folder_id, job):
+            result = base(engine, prompt, instruction, cwd, images, plan, folder_id, job)
+            return dict(result, text=replies.get(job['node_id'], result['text']))
+        self.web.execute_agent_turn = execute
+        result = self.run_turn()
+        self.assertEqual([c['node'] for c in self.calls], [None, 'scout', 'write', 'review', 'entrega'])
+        closing = self.calls[-1]
+        self.assertFalse(closing['plan']['read_only'])
+        self.assertIn('NÃO APROVADO', closing['prompt'])       # the findings are its work list
+        self.assertIn('CONTRATO DE ENTREGA', closing['prompt'])
+        self.assertIn('Inspect and improve', closing['prompt'])  # every node keeps the original request
+        self.assertEqual(result['rc'], 0)
+        self.assertIn('Evidence entrega', result['text'])
+        self.assertNotIn('NÃO APROVADO', result['text'])
+        self.assertEqual(self.saved()['nodes'][-1]['id'], 'entrega')
+        self.calls.clear()                                       # resume: finished plan, no new model call
+        self.assertIn('Evidence entrega', self.run_turn()['text'])
+        self.assertEqual(self.calls, [])
+
+    def test_clean_review_is_delivered_without_an_extra_pass(self):
+        self.run_turn()
+        self.assertEqual([c['node'] for c in self.calls], [None, 'scout', 'write', 'review'])
+
+    def test_change_request_never_ends_in_a_read_only_plan(self):
+        self.graph = {'nodes': [node('scout')]}
+        result = self.run_turn('Implementa e valida as licenças')
+        self.assertEqual([c['node'] for c in self.calls], [None, 'scout', 'entrega'])
+        self.assertFalse(self.calls[-1]['plan']['read_only'])
+        self.assertIn('Evidence entrega', result['text'])
+
+    def test_deepseek_without_daily_budget_is_not_planned(self):
+        self.entries.append(entry('deepseek', 'flash-api'))
+        self.plan['quotas']['deepseek'] = {'available': True, 'budget': {'available': False}}
+        self.run_turn()
+        self.assertNotIn('deepseek', {c['engine'] for c in self.calls})
+        self.assertNotIn('"deepseek"', self.calls[0]['prompt'].split('Usa apenas estes motores:')[1].split('.')[0])
+
     def test_planned_model_and_effort_persist_across_load(self):
         self.graph = {'nodes':[node('review',model_id='codex:gpt-luna',effort='high')]}
-        self.run_turn()
+        self.run_turn('Explain the design')
         self.assertEqual(self.calls[-1]['plan']['model_id'],'codex:gpt-luna')
         self.assertEqual(self.calls[-1]['plan']['effort'],'high')
         restored = WF.Workflow.load(self.root/'workflows/turn.json').snapshot()['nodes'][0]

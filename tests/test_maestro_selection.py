@@ -26,8 +26,10 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.choose(dict(pace_status='desconhecido', pace_blocked=True))['engine'], 'codex')
 
     def test_confirmed_limits_and_forced_substitute_skip_principal(self):
-        for q in [dict(pace_blocked=True), dict(limit_reached=True), dict(five_hour_est_pct=85)]:
+        for q in [dict(limit_reached=True), dict(five_hour_est_pct=85)]:
             self.assertEqual(self.choose(q)['engine'], 'agy')
+        # The daily pace budget holds heavy execution on Codex, not the orchestration role.
+        self.assertEqual(self.choose(dict(pace_blocked=True))['engine'], 'codex')
         self.assertEqual(self.choose(force=True)['engine'], 'agy')
 
     def test_fallback_order(self):

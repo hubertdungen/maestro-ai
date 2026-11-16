@@ -131,7 +131,7 @@ def default_plan(objective, engines, preferred=None):
         {'id': 'implement', 'title': 'Implementar e validar', 'role': 'implementation', 'engine': main, 'read_only': False,
          'depends_on': ['scout'], 'instruction': 'Implementa o pedido original usando a pesquisa recebida. Respeita o âmbito autorizado. Executa as verificações adequadas e entrega ficheiros alterados, resultados e limitações reais. Não delegues novamente.'},
         {'id': 'review', 'title': 'Rever e entregar resultado', 'role': 'review', 'engine': reviewer, 'read_only': True,
-         'depends_on': ['scout', 'implement'], 'instruction': 'Revê as alterações e as verificações do implementador através de inspeção apenas de leitura. Não alteres ficheiros nem executes ações mutáveis. Apresenta o resultado final ao utilizador, com problemas pendentes e limitações; nunca declares concluído algo não confirmado. Não delegues novamente.'},
+         'depends_on': ['scout', 'implement'], 'instruction': 'Revê as alterações e as verificações do implementador através de inspeção apenas de leitura. Não alteres ficheiros nem executes ações mutáveis. Se estiver tudo certo, apresenta o resultado final ao utilizador. Se encontrares problemas, lista-os de forma concreta e acionável (ficheiro, linha, o que corrigir): o implementador corrige-os a seguir, neste mesmo turno. Nunca declares concluído algo não confirmado. Não delegues novamente.'},
     ]}, engines)
 
 
@@ -252,6 +252,19 @@ class Workflow:
                                  ts=time.time(), status='queued'))
             self._save()
             return self.snapshot()
+
+    def append(self, node):
+        """Extend a finished plan with one more task (e.g. the maker closing review findings)."""
+        with self.lock:
+            if self._running:
+                raise ValueError('Não é possível acrescentar tarefas enquanto o fluxo está ativo.')
+            ids = {n['id'] for n in self.data['nodes']}
+            if node['id'] in ids or any(d not in ids for d in node.get('depends_on', [])):
+                raise ValueError('Tarefa repetida ou dependência inexistente.')
+            self.data['nodes'].append(dict(copy.deepcopy(node), status='pending'))
+            self.data.update(status='pending', coordinator_status='waiting')
+            self.data.pop('finished_at', None)
+            self._save()
 
     def retry(self, node_id):
         """An explicit retry retains completed siblings and dependency results."""

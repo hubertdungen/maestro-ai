@@ -731,17 +731,29 @@ def build_conversation_prompt(chat: dict, user_text: str, images: list[str], pla
         len(terms & set(re.findall(r"[\wÀ-ÿ]{4,}", (item[1].get("text") or "").casefold()))), item[0]), reverse=True)
     selected = {0} if older else set()
     selected.update(i for i, _ in ranked[:3])
-    earlier_lines = []
-    budget = 14000
+    earlier = {}
+    budget = 9000
     for i in sorted(selected):
         txt = (older[i].get("text") or "")[:min(6000, budget)]
         if not txt:
             continue
         imgs = older[i].get("images") or []
-        earlier_lines.append(f"HUBERT [mensagem anterior {i + 1}]" + (f" [Imagens: {', '.join(imgs)}]" if imgs else "") + f":\n{txt}")
+        earlier[i] = f"HUBERT [mensagem anterior {i + 1}]" + (f" [Imagens: {', '.join(imgs)}]" if imgs else "") + f":\n{txt}"
         budget -= len(txt)
         if budget <= 0:
             break
+    # Every other earlier request stays visible as a one-line ledger (newest first within the budget):
+    # requirements given 30 messages ago are still requirements.
+    budget = 4500
+    for i in range(len(older) - 1, -1, -1):
+        if i in earlier:
+            continue
+        line = f"HUBERT [mensagem anterior {i + 1}, resumida]: " + " ".join((older[i].get("text") or "").split())[:280]
+        budget -= len(line)
+        if budget < 0:
+            break
+        earlier[i] = line
+    earlier_lines = [earlier[i] for i in sorted(earlier)]
     history_access = ""
     clean_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(chat.get("id") or ""))
     if clean_id:
@@ -756,7 +768,12 @@ def build_conversation_prompt(chat: dict, user_text: str, images: list[str], pla
         history_access += "=== PEDIDOS E RESPOSTAS ANTERIORES DO HUBERT (seleção parcial) ===\n" + "\n\n".join(earlier_lines) + "\n=== FIM DOS PEDIDOS ANTERIORES ===\n\n"
     for m in prior:
         role = "HUBERT" if m.get("role") == "user" else f"MAESTRO ({m.get('agent_used', 'AI')})"
-        txt = (m.get("text") or "")[:1800]
+        txt = m.get("text") or ""
+        if m.get("role") == "user":
+            txt = txt[:4000]  # requests are requirements: keep them whole
+        elif len(txt) > 1800:
+            # A reply opens with what it did and closes with what is left: keep both ends.
+            txt = txt[:700] + "\n[…]\n" + txt[-1100:]
         imgs = m.get("images") or []
         img_str = f" [Imagens: {', '.join(imgs)}]" if imgs else ""
         img_str += " " + IMGNOTES.note_for_history(m) if imgs else ""
@@ -785,11 +802,12 @@ def build_conversation_prompt(chat: dict, user_text: str, images: list[str], pla
         "- Visual interativo: quando o Hubert pedir algo visual/interativo (tabela, gráfico, simulação, relatório, explicação para aprender), responde com UM bloco ```html autocontido (CSS/JS inline, sem dependências externas); o chat mostra-o em direto, inline. Podes guardar também um ficheiro, mas o bloco é o que conta.\n"
         "- Perguntas «como faço X» com passos diferentes por sistema: usa um bloco ```qa com uma linha «Q: pergunta», separadores «## Windows/PC» e «## App» (exatamente estes nomes) e passos «1. ...» por baixo de cada um.\n"
         "- Progresso: em tarefas com ferramentas, envia breves mensagens públicas de progresso no início e quando houver descobertas, alterações ou validação. Descreve ações e resultados observados; não exponhas raciocínio privado nem inventes atividade.\n"
-        "- Autonomia: executa e valida os passos já autorizados quando as ferramentas o permitem. Confirma as permissões reais desta sessão; não herdes a limitação de outro motor. Se for necessária uma ação manual/autorização, apresenta o comando exato num bloco bash, sh ou shell completo: a app oferece Autorizar e avançar, mostra a pasta e executa no NAS após aprovação específica. Não afirmes que esse botão altera as permissões internas do fornecedor.\n"
+        "- Autonomia: tens as ferramentas desta execução por inteiro; confirma as permissões reais desta sessão e não herdes a limitação de outro motor. Executa tu os comandos no NAS em vez de os propor. Um bloco ```bash com botão Autorizar serve só para o que esta sessão não consegue mesmo executar (ex.: sudo interativo). Comandos para o Hubert correr noutro sítio (PowerShell/Exchange/Azure/Windows, portais cloud) vão num bloco ```powershell (ou ```text), sem botão de executar, para nunca falharem no NAS.\n"
         f"- Contexto Serviçoes NAS: Radarr (:7878, key={F.RADARR_KEY}), Sonarr (:8989, key={F.SONARR_KEY}), Home Assistant (:8123).\n"
         f"- Quotas: Claude 7d={plan['quotas']['claude']['seven_day_pct']:.0f}% (ideal ≤{plan['quotas']['claude']['pace_target_pct']:.0f}%), "
         f"Codex 5h=~{plan['quotas']['codex']['five_hour_est_pct']}%, DeepSeek={plan['quotas']['deepseek']['balance_text']}\n\n"
         f"{history_access}{hist_block}"
+        + ("" if plan.get("read_only") else QAGATE.CONTRACT + "\n") +
         "[REGRA PERMANENTE DO MAESTRO · CONTINUIDADE E ENTREGA]\n"
         "O pedido atual dá continuidade ao objetivo em curso, salvo cancelamento ou mudança explícita do Hubert. "
         "Quando uma resposta anterior ficou sem resultado, não foi investigada ou deixou trabalho por fazer, "
@@ -1033,7 +1051,7 @@ def _execute_with_reserve(engine, prompt, text, cwd, images, plan, folder_id, jo
                 job['current_step'] = 'A aguardar plano do fornecedor ou ficheiros em uso (sem tokens)'
         with EXECUTION_SLOTS.hold(bool(plan.get('read_only')),
                                   stopped=lambda: bool(job and job.get('status') == 'stopped'),
-                                  waiting=waiting, engine=chosen, scope=plan.get('write_paths') or str(pathlib.Path(cwd).resolve())):
+                                  waiting=waiting, engine=chosen, scope=Q.execution_scope(plan, cwd)):
             result = _execute_agent_turn(chosen, attempt_prompt, text, cwd, images, attempt_plan, folder_id, job)
         efficiency_calls.append(dict(supplied_input_estimate=EFFICIENCY.estimate(attempt_prompt), usage=result.get('usage')))
         result['efficiency_calls'] = list(efficiency_calls)
@@ -1685,18 +1703,9 @@ def start_async_chat_job(chat: dict, eng_key: str, full_prompt: str, user_text: 
         if was_stopped and job.get("stop_reason") == "steer":
             return
         if task_id and not failed and not was_stopped and not plan.get("read_only"):
-            _cur = next((t for t in TURN_QUEUE.tasks if t["id"] == task_id), None) or {}
-            _hits = QAGATE.check(res.get("text"))
-            if _hits:
-                _n = _cur.get("qa_cycles", 0)
-                if _n < QAGATE.MAX_CYCLES:
-                    # Reuses the queue's requeue path (same as auto-retry): back to dev with the findings, QA repeats in the next turn.
-                    TURN_QUEUE.update(task_id, status="queued", reason="evaluating", qa_cycles=_n + 1, assigned_engine=None,
-                                      qa_findings=QAGATE.redo_note(res.get("text"), _n + 1))
-                    with JOBS_LOCK:
-                        job.update(status="done", current_step="🔁 Porta de qualidade: de volta à implementação", finished_at=time.time())
-                    return
-                res["text"] = str(res.get("text") or "") + QAGATE.exhausted_note(_hits)
+            res = quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_key, job, task_id)
+            with JOBS_LOCK:
+                was_stopped = job.get("status") == "stopped"
         with CHAT_STORAGE_LOCK:
             latest_chat = load_chat(cid) or chat
             message = {"role": "assistant", "text": res["text"], "agent_used": res["agent_used"],
@@ -1746,6 +1755,41 @@ def start_async_chat_job(chat: dict, eng_key: str, full_prompt: str, user_text: 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
     return get_job_snapshot(cid) or {}
+
+
+def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_key, job, task_id=None, run=None):
+    """A reply that declares itself unfinished goes straight back to a maker, inside this job.
+
+    The old path requeued the turn: it waited behind the queue and, for workflow turns, reopened
+    the finished plan and returned the very same text until the cycles ran out.
+    """
+    run = run or execute_agent_turn
+    hits = []
+    for cycle in range(1, QAGATE.MAX_CYCLES + 1):
+        hits = QAGATE.check(res.get("text"))
+        if not hits or cycle == QAGATE.MAX_CYCLES or job.get("status") == "stopped":
+            break
+        if task_id:
+            TURN_QUEUE.update(task_id, qa_cycles=cycle)
+        _push_job_step(job, f"🔁 Porta de qualidade: resposta incompleta, a corrigir já (ciclo {cycle})")
+        # One write-capable engine with the full conversation prompt; never the workflow again.
+        redo_plan = {k: v for k, v in plan.items() if k not in ("workflow", "no_tools", "task_role")}
+        redo_plan.update(multi_agent=False, read_only=False, qa_cycle=cycle)
+        try:
+            redo = run(eng_key, full_prompt + QAGATE.redo_note(res.get("text"), cycle), user_text, cwd, images,
+                       redo_plan, folder_id=proj_key, job=job)
+        except Exception as exc:
+            _push_job_step(job, f"Correção interrompida: {type(exc).__name__}")
+            break
+        if redo.get("rc", 0) != 0 or not str(redo.get("text") or "").strip():
+            break  # keep the last complete answer instead of an error dump
+        kept = res.get("plan") or {}
+        res = dict(redo, elapsed_s=round(time.time() - job["t0"], 1),
+                   tools=list(res.get("tools") or []) + list(redo.get("tools") or []),
+                   plan=dict(redo.get("plan") or {}, **({"workflow": kept["workflow"]} if kept.get("workflow") else {}), qa_cycles=cycle))
+    if hits and QAGATE.check(res.get("text")):
+        res["text"] = str(res.get("text") or "") + QAGATE.exhausted_note(hits)
+    return res
 
 
 def enqueue_turn(body):
@@ -1887,6 +1931,49 @@ def queue_policy():
         return 'fifo'
 
 
+import collections
+THOUGHTS = collections.deque(maxlen=60)
+_THOUGHT_LAST = {}
+WHY = {
+    'dependency': ('⏳', 'espera: depende do que já está a correr (mesmo assunto/ficheiros)'),
+    'capacity': ('🚦', 'espera: os {n} agentes simultâneos estão ocupados'),
+    'engine_busy': ('🔧', 'espera: os motores adequados já têm trabalho'),
+    'quota': ('🪫', 'espera: quota dos motores esgotada ou em pausa'),
+    'daily_budget': ('💸', 'espera: o orçamento diário protege a quota semanal'),
+    'ready': ('🎯', 'escolhi {engine}: livre e dentro do ritmo de quota'),
+    'economy': ('🪙', 'escolhi {engine}: pedido leve, poupa quota das subscrições'),
+    'parallel': ('🔀', 'escolhi {engine} em paralelo: análise independente'),
+    'parallel_write': ('🔀', 'escolhi {engine} em paralelo: ficheiros sem sobreposição'),
+    'essential_reserve': ('🛟', 'escolhi {engine} com a reserva: trabalho essencial, quota apertada'),
+}
+
+
+def think(key, reason, task, engine=None):
+    """Public orchestration log: one line per real change of mind, never model reasoning."""
+    if _THOUGHT_LAST.get((task['id'])) == (key, reason, engine):
+        return
+    _THOUGHT_LAST[task['id']] = (key, reason, engine)
+    icon, tpl = WHY.get(reason, ('💭', reason))
+    chat = load_chat(task['chat_id']) or {}
+    THOUGHTS.append(dict(ts=time.time(), icon=icon, reason=reason,
+                         chat=str(chat.get('title') or task['chat_id'])[:40],
+                         req=' '.join(str(task.get('text') or '').split())[:60],
+                         text=tpl.format(engine=M.ENGINE_DISPLAY.get(engine, engine), n=Q.MAX_PARALLEL_AGENTS)))
+    if len(_THOUGHT_LAST) > 500:
+        _THOUGHT_LAST.clear()
+
+
+def thoughts_snapshot():
+    with TURN_QUEUE.lock:
+        tasks = [dict(t) for t in TURN_QUEUE.tasks]
+    run = [t for t in tasks if t['status'] == 'running']
+    wait = [t for t in tasks if t['status'] == 'queued']
+    pol = {'fifo': 'por ordem de chegada', 'chat': 'acabar um chat antes de outro', 'short': 'pedidos curtos primeiro',
+           'auto': 'automática: chats em curso e pedidos curtos primeiro'}.get(queue_policy(), queue_policy())
+    now = f'{len(run)} a correr · {len(wait)} em espera · fila {pol}'
+    return dict(now=now, busy=bool(run or wait), thoughts=list(THOUGHTS)[-25:][::-1])
+
+
 def schedule_turns_once():
     with TURN_QUEUE.lock:
         mutation_version = TURN_QUEUE.mutation_version
@@ -1910,8 +1997,10 @@ def schedule_turns_once():
                 and not (triaged := _llm_independent(task, predecessors))):
             blocker = next((t['id'] for t in interrupted if t['chat_id'] == cid and positions[t['id']] < positions[task['id']]), None)
             if blocker:
+                think('d', 'dependency', task)
                 TURN_QUEUE.update(task['id'], reason='dependency', blocked_by=blocker)
             else:  # just waits its turn behind the earlier request of the same chat
+                think('d', 'dependency', task)
                 TURN_QUEUE.update(task['id'], reason='dependency', blocked_by=None, waiting_on='__chat_order__')
             continue
         with JOBS_LOCK:
@@ -1925,10 +2014,12 @@ def schedule_turns_once():
             task['parallel_ok'] = bool(triaged or _llm_independent(task, predecessors))
         if running and not task['parallel_ok'] and not Q.independent_analysis(task):
             waiting = ', '.join(sorted({f"{j.get('domain') or j.get('project') or '?'} · {j.get('agent_label') or ''}".strip(' ·') for j in running}))
+            think('d', 'dependency', task)
             TURN_QUEUE.update(task['id'], reason='dependency', waiting_on=waiting, conflict=conflict or 'orange')
             blocked_chats.add(cid)
             continue
         if len(Q.executors(running)) >= Q.MAX_PARALLEL_AGENTS:
+            think('c', 'capacity', task)
             TURN_QUEUE.update(task['id'], reason='capacity')
             blocked_chats.add(cid)
             continue
@@ -1953,6 +2044,7 @@ def schedule_turns_once():
                     TURN_QUEUE.update(task['id'], status='interrupted', reason='interrupted', gave_up=True, error='sem motores alternativos')
                     give_up_notice(cid, task['id'], 'já falhou em todos os motores disponíveis (' + ', '.join(task.get('failed_engines') or []) + ')')
                     continue
+                think('n', reason, task)
                 TURN_QUEUE.update(task['id'], reason=reason, checked_at=time.time(), **({'conflict': 'yellow'} if reason == 'engine_busy' else {}))
                 blocked_chats.add(cid)
                 continue
@@ -1964,10 +2056,15 @@ def schedule_turns_once():
                     continue
                 TURN_QUEUE.update(task['id'], status='running', reason=reason, blocked_by=None, waiting_on=None, conflict=None, write_paths=task['write_paths'], assigned_engine=engine, estimated_input_tokens=task['estimated_input_tokens'])
             label = M.ENGINE_DISPLAY.get(engine, engine)
+            think('y', reason, task, engine)
             if engine == 'deepseek' and Q.independent_analysis(task):
                 plan['read_only'] = True
             plan.update(model_id=task.get('model_id'), effort=task.get('effort'),
                         essential_reserve=reason == 'essential_reserve')
+            if reason == 'parallel_write':
+                # The scheduler already established independence (other project, disjoint files, Sentinel or Avançar).
+                # Without its own scope the turn was admitted and then parked behind the shared home folder.
+                plan['exec_scope'] = 'turno:' + task['id']
             plan.update(exec_engine=engine, exec_engine_name=label, agents=[label], multi_agent=reason != 'essential_reserve' and WORKFLOW.needs_workflow(task.get('text') or '', plan),
                         engine_origin='queue_strategy', reason=f'Fila Maestro: {reason} · {label}')
             body = dict(task, id=cid)
@@ -2074,8 +2171,6 @@ def dispatch_turn(body):
             '\n'.join('- ' + n for n in body['failure_notes']) +
             '\nNão repitas o mesmo método. Analisa a causa, muda a abordagem (outra ferramenta, passos mais pequenos, outro caminho) e adapta o plano como achares necessário. '
             'Com bom senso: se concluíres que é impossível ou desproporcionado, diz claramente porquê e propõe alternativas em vez de insistir.')
-    if body.get('qa_findings') and not is_steer:
-        effective_user_text += body['qa_findings']
     if plan.get('write_paths'):
         effective_user_text += ('\n[Âmbito de escrita reservado para este plano: ' + ', '.join(plan['write_paths']) +
                                 '. Outros planos podem estar ativos nesta pasta. Altera apenas estes ficheiros; '
@@ -2447,6 +2542,8 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(u.query)
             force = str((qs.get("refresh") or ["0"])[0]).lower() in ("1", "true", "yes")
             return self._reply(200, get_orchestration_snapshot(force))
+        if u.path == "/api/orchestrator/thoughts":
+            return self._reply(200, thoughts_snapshot())
         if u.path == "/api/status":
             with JOBS_LOCK:
                 jobs_copy = dict(ACTIVE_JOBS)
