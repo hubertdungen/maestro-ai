@@ -6182,7 +6182,7 @@ function esc(s) {
       if (d < bd){ var b = el.matches('[data-wf-turn]') ? el : el.querySelector('[data-wf-turn]'), t = b && b.getAttribute('data-wf-turn');
         bd = d; bestEl = el; best = t || (el.matches('.live-workflow') ? 'live' : 'i:' + idx); }
     });
-    activeEl = bestEl; panel.classList.toggle('st-away', !bestEl && total > 0); /* sem nenhum plano no chat mostra o aviso, em vez de um buraco vazio */
+    activeEl = bestEl; var away = !bestEl; if (away !== panel.classList.contains('st-away')){ panel.classList.toggle('st-away', away); sig = ''; if (away) panel.style.top = ''; refresh(); } /* sem plano à vista: o painel fica visível com o aviso, nunca desaparece */
     if (best && best !== turn){ turn = best; panel.classList.add('st-switching'); clearTimeout(swTimer); swTimer = setTimeout(function(){ panel.classList.remove('st-switching'); }, 450); refresh(); }
     place();
   }
@@ -6212,7 +6212,7 @@ function esc(s) {
     panel.querySelector('header strong').textContent = ui('Estratégia','Strategy');
     panel.querySelector('#stClose').setAttribute('aria-label', ui('Fechar','Close'));
     window.dispatchEvent(new Event('strategyvisibilitychange'));
-    var m = open ? current() : null;
+    var m = open && !panel.classList.contains('st-away') ? current() : null;
     var highlight = thinkNext && m && m.turn === pendingTurn && (window.__maestroState || {}).currentChat.id === pendingChat;
     if (highlight) turn = pendingTurn;
     var LBL = labels();
