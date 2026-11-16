@@ -6395,6 +6395,22 @@ function esc(s) {
     panel.style.bottom = 'auto'; panel.style.top = top + 'px';
     panel.style.clipPath = 'inset(0 -60px ' + Math.max(0, top + h - vr.bottom) + 'px -60px)';
   }
+  /* Com a Estratégia aberta, a coluna de leitura não fica abaixo de READ_MIN: o painel direito cede o
+     lugar e volta quando a Estratégia fecha. Se o reabrires à mão, fica como quiseres até fechares a Estratégia. */
+  var READ_MIN = 480, ST_LANE = 444, _rightYielded = false, _rightKept = false;
+  function yieldRightPanel(stOpen){
+    var btn = document.getElementById('btnToggleRight'), pane = document.getElementById('paneChat');
+    if (!btn || !pane) return;
+    var shown = btn.getAttribute('aria-expanded') === 'true';
+    if (!stOpen) {
+      if (_rightYielded && !shown) btn.click();
+      _rightYielded = false; _rightKept = false;
+      return;
+    }
+    if (_rightYielded && shown) { _rightYielded = false; _rightKept = true; }   /* reaberto à mão */
+    var paneWidth = pane.getBoundingClientRect().width;
+    if (shown && !_rightKept && paneWidth > 0 && paneWidth - ST_LANE < READ_MIN) { btn.click(); _rightYielded = true; }
+  }
   function refresh(){
     if (!panel) return;
     var insp = document.getElementById('inspectorRight'), ir = insp ? insp.getBoundingClientRect() : null;
@@ -6406,6 +6422,7 @@ function esc(s) {
     var idle = panel.classList.contains('st-idle');
     var open = isOpen() && (!idle || !!panel.__peek); panel.classList.toggle('closed', !open); if (!open){ panel.style.top = ''; panel.style.bottom = ''; panel.style.clipPath = ''; }
     document.body.classList.toggle('st-open', open && wide());
+    yieldRightPanel(open && wide());
     panel.setAttribute('aria-label', ui('Estratégia do pedido','Request strategy'));
     var toggle = panel.querySelector('#stToggle');
     toggle.setAttribute('aria-expanded', String(open));
