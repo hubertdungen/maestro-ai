@@ -6147,7 +6147,9 @@ function esc(s) {
 
   /* ---- painel lateral ---- */
   var activeEl = null, swTimer = null, panel, body, openKey = 'maestroStrategyOpen', turn = '', sig = '', thinkNext = false, pendingTurn = '', pendingChat = '';
-  function isOpen(){ return localStorage.getItem(openKey) !== '0'; }
+  function okey(){ return wide() ? openKey : openKey + 'N'; } /* estreito: gaveta, fechada por omissão */
+  function setOpen(v){ localStorage.setItem(okey(), v ? '1' : '0'); }
+  function isOpen(){ var v = localStorage.getItem(okey()); return wide() ? v !== '0' : v === '1'; }
   function current(){
     var st = window.__maestroState || {}, chat = st.currentChat; if (!chat) return null;
     var job = st.activeJob;
@@ -6229,7 +6231,7 @@ function esc(s) {
     S.drawEdges(body);
     if (highlight){ var t = document.getElementById('stThink'); if (t) t.scrollIntoView({block:'nearest'}); thinkNext = false; pendingTurn = ''; pendingChat = ''; }
   }
-  S.open = function(thinking){ localStorage.setItem(openKey, '1'); thinkNext = !!thinking; sig = ''; refresh(); };
+  S.open = function(thinking){ setOpen(true); thinkNext = !!thinking; sig = ''; refresh(); };
   // Apontador: abre o pensamento do orquestrador desse pedido (o chat abre pelo clique da linha).
   S.point = function(requestTurn, chatId){ if (wide()){ pendingTurn = requestTurn || ''; pendingChat = chatId; S.open(true); } };
 
@@ -6238,14 +6240,14 @@ function esc(s) {
     panel.innerHTML = '<button type="button" class="st-toggle" id="stToggle" aria-controls="stBody" aria-expanded="false" aria-label="' + ui('Mostrar ou ocultar a estratégia','Show or hide strategy') + '" title="' + ui('Estratégia','Strategy') + '">🧭</button>' +
       '<div class="st-main"><header><strong>' + ui('Estratégia','Strategy') + '</strong><button type="button" class="st-close" id="stClose" aria-label="' + ui('Fechar','Close') + '">✕</button></header><div class="st-body" id="stBody"></div></div>';
     document.body.appendChild(panel); body = panel.querySelector('#stBody');
-    function close(){ localStorage.setItem(openKey, '0'); thinkNext = false; refresh(); panel.querySelector('#stToggle').focus(); }
+    function close(){ setOpen(false); thinkNext = false; refresh(); panel.querySelector('#stToggle').focus(); }
     panel.querySelector('#stClose').onclick = close;
     panel.addEventListener('keydown',function(ev){ if(ev.key === 'Escape'){ ev.preventDefault(); close(); } });
     if (window.ResizeObserver){ new ResizeObserver(function(){ refresh(); }).observe(document.getElementById('paneChat')); }
-    panel.querySelector('#stToggle').onclick = function(){ if (isOpen()) localStorage.setItem(openKey, '0'); else localStorage.setItem(openKey, '1'); sig = ''; refresh(); };
+    panel.querySelector('#stToggle').onclick = function(){ setOpen(!isOpen()); sig = ''; refresh(); };
     var sc = document.getElementById('chatScroll'); if (sc) sc.addEventListener('scroll', followScroll, {passive:true});
     window.addEventListener('resize', function(){ sig = ''; refresh(); });
-    setInterval(function(){ if (!document.hidden && wide()){ followScroll(); refresh(); } }, 1500);
+    setInterval(function(){ if (!document.hidden){ if (wide()) followScroll(); refresh(); } }, 1500);
     refresh();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();

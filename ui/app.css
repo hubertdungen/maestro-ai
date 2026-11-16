@@ -2367,7 +2367,7 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 @media (min-width:1081px){body.st-open #paneChat{padding-right:var(--st-w,360px)}}
 /* painel fechado: reserva a faixa do 🧭 para não ficar sobre o scroller */
 @media (min-width:1081px){body:not(.st-open) #paneChat{padding-right:52px}}
-@media (max-width:1080px){#stPanel{display:none}}
+@media (max-width:1080px){#stPanel{width:min(340px,calc(100vw - 56px));z-index:60;top:64px}#stPanel.closed{width:0}}
 @media (prefers-reduced-motion:reduce){.st-edge.flow,.st-node[data-status=running],.st-think.pulse{animation:none}}
 
 /* Active agents: vector circuitry below the content, with a moving light veil. */
