@@ -2528,3 +2528,6 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 
 /* Strategy nunca mexe no layout do chat: o painel é sobreposição pura (sem padding reativo → sem reflow ao trocar de chat) */
 @media (min-width:1081px){body #paneChat,body.st-open #paneChat,body:not(.st-open) #paneChat,body.st-none #paneChat{padding-right:52px!important;transition:none!important}}
+
+/* Strategy em repouso: só o botão 🧭 discreto, sem ocupar espaço; clicar abre */
+#stPanel.st-idle{opacity:1;visibility:visible;pointer-events:none}#stPanel.st-idle .st-toggle{pointer-events:auto;opacity:.45}#stPanel.st-idle .st-toggle:hover{opacity:1}

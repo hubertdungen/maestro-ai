@@ -6245,7 +6245,7 @@ function esc(s) {
     else if (idleWant === panel.classList.contains('st-idle')) { clearTimeout(refresh.__idleT); refresh.__idleT = 0; }
     else if (!refresh.__idleT || refresh.__idleWant !== idleWant) { clearTimeout(refresh.__idleT); refresh.__idleWant = idleWant; refresh.__idleT = setTimeout(function(){ refresh.__idleT = 0; applyIdle(refresh.__idleWant); refresh(); }, 900); }
     var idle = panel.classList.contains('st-idle');
-    var open = isOpen() && !idle; panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
+    var open = isOpen() && (!idle || !!panel.__peek); panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
     document.body.classList.toggle('st-open', open && wide());
     var pane = document.getElementById('paneChat');
     /* 40px do #stToggle (left:-40px) + 2 de folga */
@@ -6292,7 +6292,7 @@ function esc(s) {
     panel.querySelector('#stClose').onclick = close;
     panel.addEventListener('keydown',function(ev){ if(ev.key === 'Escape'){ ev.preventDefault(); close(); } });
     if (window.ResizeObserver){ new ResizeObserver(function(){ refresh(); }).observe(document.getElementById('paneChat')); }
-    panel.querySelector('#stToggle').onclick = function(){ setOpen(!isOpen()); sig = ''; refresh(); };
+    panel.querySelector('#stToggle').onclick = function(){ if (panel.classList.contains('st-idle')){ panel.__peek = !panel.__peek; setOpen(true); } else setOpen(!isOpen()); sig = ''; refresh(); };
     var sc = document.getElementById('chatScroll'); if (sc) sc.addEventListener('scroll', followScroll, {passive:true});
     window.addEventListener('resize', function(){ sig = ''; refresh(); });
     setInterval(function(){ if (!document.hidden){ if (wide()) followScroll(); refresh(); } }, 1500);
