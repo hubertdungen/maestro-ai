@@ -6173,15 +6173,16 @@ function esc(s) {
   function followScroll(){
     var sc = document.getElementById('chatScroll'); if (!sc) return;
     var vr = sc.getBoundingClientRect(), mid = vr.top + vr.height * 0.5; var best = null, bd = 1e9, bestEl = null;
-    var i = 0;
+    var i = 0, total = 0;
     sc.querySelectorAll('.wf-panel, .live-workflow').forEach(function(el){
+      if (!el.matches('.live-workflow') || el.children.length) total++;
       if (el.matches('.live-workflow') && !el.children.length) return;
       var idx = i++, r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
       if (r.bottom < vr.top || r.top > vr.bottom) return; // fora do ecrã: o painel não o segue
       if (d < bd){ var b = el.matches('[data-wf-turn]') ? el : el.querySelector('[data-wf-turn]'), t = b && b.getAttribute('data-wf-turn');
         bd = d; bestEl = el; best = t || (el.matches('.live-workflow') ? 'live' : 'i:' + idx); }
     });
-    activeEl = bestEl; panel.classList.toggle('st-away', !bestEl);
+    activeEl = bestEl; panel.classList.toggle('st-away', !bestEl && total > 0); /* sem nenhum plano no chat mostra o aviso, em vez de um buraco vazio */
     if (best && best !== turn){ turn = best; panel.classList.add('st-switching'); clearTimeout(swTimer); swTimer = setTimeout(function(){ panel.classList.remove('st-switching'); }, 450); refresh(); }
     place();
   }
