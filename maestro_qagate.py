@@ -144,6 +144,18 @@ def repo_findings(text, cwd, since, request=''):
     return found
 
 
+def labels(hits):
+    """Plain-language reasons for a refusal, for the queue, the live card and later analysis."""
+    names = ((_NEG, 'declara trabalho por acabar'), (_ASK, 'acaba a pedir autorização'),
+             (_UNSEEN, 'resultado não verificado (cache/browser)'), (_GIT, 'diz que não fechou o git'))
+    out = []
+    for hit in hits:
+        label = next((name for group, name in names if hit in group), None) or ('git: ' + str(hit))
+        if label not in out:
+            out.append(label)
+    return out
+
+
 def redo_note(text, cycle, repos=()):
     body = str(text or '').strip()[-3500:]
     if repos:
