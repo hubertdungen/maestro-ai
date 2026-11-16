@@ -21,9 +21,20 @@ request ─► triage ─► simple?  ─► one engine ─► answer
               quota)               ├─ scout      (read-only, cheap)
                                    ├─ specialist (writes code)  ┐ parallel
                                    └─ reviewer   (checks it)    ┘ where independent
-                                              │
-                              QA gate ◄───────┘ ─► answer + Strategy panel
+                                              │ findings? ─► back to the specialist, same turn
+                              delivery gate ◄─┘ ─► answer + Strategy panel
+                              (reply text + real git state; fixes in place, never requeues)
 ```
+
+### Delivery, not reports
+
+An orchestrator is only useful if what comes back is finished. Three mechanisms enforce that:
+
+- **One delivery contract** for every writer (single turns, plan nodes, fix passes): commit, push, merge and deploy belong to the turn; the only things that need confirmation are deleting data the work did not create, spending money and sending something to third parties.
+- **Review closes inside the turn.** A read-only reviewer never has the last word on unfinished work: its findings become the specialist's work list in the same turn, and a request for changes can never end in a read-only plan.
+- **A gate that checks reality.** A reply that asks for permission, declares pending work or says "press Ctrl+F5" is refused and fixed in place. The gate also reads the repositories the turn touched: source files changed and left uncommitted, or commits left unpushed, go back to the maker.
+
+`tools/ver.py URL --texto "…" [--movel]` gives every engine eyes: a screenshot plus a check of the rendered text, desktop or phone, using the Chromium that Playwright already installed.
 
 ## Features
 
@@ -33,7 +44,8 @@ request ─► triage ─► simple?  ─► one engine ─► answer
 | **Multi-agent workflows** | Complex requests become a dependency graph (scout → specialist → review), run with parallel read-only tasks. Plans and results are persisted and resumable. |
 | **Strategy panel** | Beside the chat: the orchestrator's reasoning, the agent graph, per-node status, engine/model used and a decision timeline. Follows the request you are reading; with none in view it shows the latest or live plan. |
 | **Quota budgets** | Weekly quotas split into daily budgets; DeepSeek has a per-cycle money budget with a daily bar and yellow/red lines for justified extra use. |
-| **Read-only scouts** | A restricted DeepSeek API mode that can only list folders, read excerpts and grep inside the project. |
+| **Read-only scouts and reviewers** | A restricted DeepSeek API mode that can only list folders, read excerpts and grep inside the project; Claude reviewers get inspection-only shell (`git status/diff/log/show` and the page checker). |
+| **Real parallelism** | Requests on different apps run at the same time on different subscriptions; a cheap Sentinel decides independence, and same-plan writers stay exclusive. |
 | **Web studio** | Chats and folders with archive, request queue, live quota and fleet panels, six visual worlds, PT/EN UI, installable PWA for desktop, tablet and phone. |
 | **Interactive answers** | Replies can render inline HTML, tables, charts and step-by-step Q&A cards per platform. |
 | **Optional integrations** | NAS media, Home Assistant and 3D printers live in `maestro_features.py`; you configure them. |
@@ -80,6 +92,7 @@ Each world re-skins colour, type and effects of the whole app. Pick one from the
 - Linux (developed on a home NAS), Python 3.11+
 - The agent CLIs you want to use, already logged in: `claude`, `codex`, `agy`, and/or a DeepSeek API key
 - Optional, for GIF export: `pip install -r requirements-gif.txt` into `.gif-deps/`
+- Optional, for visual verification (`tools/ver.py`): a Playwright Chromium in `~/.cache/ms-playwright` (`npx playwright install chromium`)
 
 ## Quick start
 

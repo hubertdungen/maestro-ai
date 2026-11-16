@@ -896,7 +896,8 @@ code.inline-code {
 }
 .turn-imgs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; max-width: 100%; }
 .turn-imgs img {
-  max-width: 100%; width: auto; max-height: 220px; height: auto;
+  /* Altura reservada: a imagem chega depois do texto e não pode empurrar a conversa. */
+  max-width: 100%; width: auto; height: 180px; min-width: 96px;
   object-fit: contain; border-radius: 11px; border: 1px solid var(--line-strong);
   cursor: zoom-in; background: rgba(5, 8, 17, 0.55); display: block;
 }

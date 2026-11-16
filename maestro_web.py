@@ -181,6 +181,14 @@ class AgentTimeout(Exception):
         super().__init__(f"timeout após {self.seconds}s")
 
 
+def _kill_group(p) -> None:
+    """Engines spawn children (shells, node, browsers); killing only the parent leaves them holding RAM."""
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        p.kill()
+
+
 def get_build_info() -> dict:
     """Calcula a assinatura ao vivo dos ficheiros do Maestro para o Auto-Updater."""
     watched = [
@@ -1249,19 +1257,19 @@ def _execute_agent_turn(engine_choice: str, full_prompt: str, raw_user_text: str
                 if job.get("status") == "stopped":
                     break
                 if limit > 0 and (time.time() - started) > limit:
-                    p.kill()
+                    _kill_group(p)
                     raise AgentTimeout(limit)
                 time.sleep(0.25)
             try:
                 p.wait(timeout=5)
             except Exception:
-                p.kill()
+                _kill_group(p)
             t_out.join(timeout=3); t_err.join(timeout=3)
             if events:
                 measured_usage = events.usage
             return (p.returncode or 0), events.output() if events else "".join(out_chunks), "".join(err_chunks) + ('\n' + '\n'.join(events.errors) if events else '')
         except subprocess.TimeoutExpired:
-            p.kill()
+            _kill_group(p)
             raise AgentTimeout(limit)
 
     rc = 1
@@ -1324,7 +1332,7 @@ def _execute_agent_turn(engine_choice: str, full_prompt: str, raw_user_text: str
                 agy_timed_out["flag"] = True
                 _push_job_step(job, "⏱ Tempo limite atingido — a terminar o agente…")
                 try:
-                    p.kill()
+                    _kill_group(p)
                 except Exception:
                     pass
 
@@ -1436,6 +1444,8 @@ def _execute_agent_turn(engine_choice: str, full_prompt: str, raw_user_text: str
             rc, out, err = run_cmd_capture(cmd, event_provider='claude')
             reply_text = out.strip()
             stderr_text = err.strip()
+            if rc == 0:
+                note_claude_auth(stderr_text)
             tools_used.append(f"Motor: Claude {model.capitalize()}")
 
         elif chosen == "codex":
@@ -1738,6 +1748,10 @@ def start_async_chat_job(chat: dict, eng_key: str, full_prompt: str, user_text: 
             if failed and not was_stopped and n < 4:
                 # ponytail: max 5 attempts (2 on the first engine + up to 3 others; see Q.decide); ceiling is attempts, not tokens.
                 tried = (cur.get('failed_engines') or []) + [cur.get('assigned_engine') or eng_key]
+                if res.get('provider_rejection') == 'quota' or re.search(
+                        r'orçamento diário/mensal insuficiente|RATE_LIMIT|usage limit|hit your[^\n]*limit|quota (?:exceeded|exhausted)',
+                        str(res.get('text') or ''), re.I):
+                    tried.append(tried[-1])  # counts as both attempts: the same account will refuse again
                 notes = ((cur.get('failure_notes') or []) + [(cur.get('assigned_engine') or eng_key) + ': ' + ' '.join(str(res.get('text') or '').split())[-300:]])[-3:]
                 TURN_QUEUE.update(task_id, status='queued', reason='evaluating', auto_retries=n + 1, assigned_engine=None, failed_engines=tried, failure_notes=notes)
             else:
@@ -1764,9 +1778,13 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
     the finished plan and returned the very same text until the cycles ran out.
     """
     run = run or execute_agent_turn
-    hits = []
+    hits, repos = [], []
     for cycle in range(1, QAGATE.MAX_CYCLES + 1):
-        hits = QAGATE.check(res.get("text"))
+        # Text says what the engine claims; the repositories say what it really left behind.
+        seen, repos = repos, QAGATE.repo_findings(res.get("text"), cwd, job["t0"], user_text)
+        hits = QAGATE.check(res.get("text")) + repos
+        if cycle > 1 and hits == repos == seen:
+            break  # the maker looked and left those files on purpose: do not ask a third time
         if not hits or cycle == QAGATE.MAX_CYCLES or job.get("status") == "stopped":
             break
         if task_id:
@@ -1776,7 +1794,7 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
         redo_plan = {k: v for k, v in plan.items() if k not in ("workflow", "no_tools", "task_role")}
         redo_plan.update(multi_agent=False, read_only=False, qa_cycle=cycle)
         try:
-            redo = run(eng_key, full_prompt + QAGATE.redo_note(res.get("text"), cycle), user_text, cwd, images,
+            redo = run(eng_key, full_prompt + QAGATE.redo_note(res.get("text"), cycle, repos), user_text, cwd, images,
                        redo_plan, folder_id=proj_key, job=job)
         except Exception as exc:
             _push_job_step(job, f"Correção interrompida: {type(exc).__name__}")
@@ -1787,8 +1805,11 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
         res = dict(redo, elapsed_s=round(time.time() - job["t0"], 1),
                    tools=list(res.get("tools") or []) + list(redo.get("tools") or []),
                    plan=dict(redo.get("plan") or {}, **({"workflow": kept["workflow"]} if kept.get("workflow") else {}), qa_cycles=cycle))
-    if hits and QAGATE.check(res.get("text")):
-        res["text"] = str(res.get("text") or "") + QAGATE.exhausted_note(hits)
+    if hits:
+        repos = QAGATE.repo_findings(res.get("text"), cwd, job["t0"], user_text)
+        left = QAGATE.check(res.get("text")) + repos
+        if left:
+            res["text"] = str(res.get("text") or "") + QAGATE.exhausted_note(left, repos)
     return res
 
 
@@ -1813,7 +1834,7 @@ def enqueue_turn(body):
     return dict(chat_activity_snapshot(chat['id']), ok=True, **{'async': True})
 
 
-def chat_activity_snapshot(chat_id):
+def chat_activity_snapshot(chat_id, known=None):
     # Admission takes the same locks: a response cannot show a task both
     # waiting in the composer and executing in the history.
     with TURN_QUEUE.lock, CHAT_STORAGE_LOCK:
@@ -1831,7 +1852,12 @@ def chat_activity_snapshot(chat_id):
                        and not t.get('started_at') and t['id'] not in answered}
             chat['messages'] = [m for m in chat.get('messages', [])
                                 if m.get('turn_id') not in waiting]
-        return {'chat': chat, 'job': job,
+        same = False
+        if chat:
+            # The poll runs every second: send the conversation only when it changed (it can exceed 1 MB).
+            chat['_v'] = '%s:%d' % (chat.get('updated_at'), len(chat['messages']))
+            same = bool(known) and known == chat['_v']
+        return {'chat': None if same else chat, 'chat_same': same, 'job': job,
                 'running': bool(job and job['status'] == 'running'),
                 'queue': queue, 'queue_policy': queue_policy(), 'activity_version': time.monotonic_ns()}
 
@@ -1963,6 +1989,29 @@ def think(key, reason, task, engine=None):
         _THOUGHT_LAST.clear()
 
 
+CLAUDE_AUTH_PATH = M.STATE_DIR / "claude-auth.json"
+
+
+def note_claude_auth(stderr_text):
+    """The Claude CLI announces the end of its sign-in days ahead; without this every Claude engine just stops one day."""
+    found = re.search(r'sign-in ends between (\d{4}-\d\d-\d\d) and (\d{4}-\d\d-\d\d)', stderr_text or '')
+    try:
+        if found:
+            CLAUDE_AUTH_PATH.write_text(json.dumps({'first': found[1], 'last': found[2], 'seen': time.time()}))
+        elif CLAUDE_AUTH_PATH.exists():
+            CLAUDE_AUTH_PATH.unlink()
+    except OSError:
+        pass
+
+
+def claude_auth_warning():
+    try:
+        data = json.loads(CLAUDE_AUTH_PATH.read_text())
+    except (OSError, ValueError):
+        return ''
+    return f"⚠️ Login do Claude expira entre {data['first']} e {data['last']}: corre `claude auth login`"
+
+
 def thoughts_snapshot():
     with TURN_QUEUE.lock:
         tasks = [dict(t) for t in TURN_QUEUE.tasks]
@@ -1971,6 +2020,9 @@ def thoughts_snapshot():
     pol = {'fifo': 'por ordem de chegada', 'chat': 'acabar um chat antes de outro', 'short': 'pedidos curtos primeiro',
            'auto': 'automática: chats em curso e pedidos curtos primeiro'}.get(queue_policy(), queue_policy())
     now = f'{len(run)} a correr · {len(wait)} em espera · fila {pol}'
+    warning = claude_auth_warning()
+    if warning:
+        now = warning + ' · ' + now
     return dict(now=now, busy=bool(run or wait), thoughts=list(THOUGHTS)[-25:][::-1])
 
 
@@ -2171,6 +2223,10 @@ def dispatch_turn(body):
             '\n'.join('- ' + n for n in body['failure_notes']) +
             '\nNão repitas o mesmo método. Analisa a causa, muda a abordagem (outra ferramenta, passos mais pequenos, outro caminho) e adapta o plano como achares necessário. '
             'Com bom senso: se concluíres que é impossível ou desproporcionado, diz claramente porquê e propõe alternativas em vez de insistir.')
+    if body.get('auto_resumes') and not is_steer:
+        effective_user_text += ('\n\n[RETOMA · a execução anterior deste pedido foi interrompida a meio (reinício do serviço)]\n'
+                                'Parte do trabalho pode já estar feita. Antes de agir, vê o estado real (git status/diff, ficheiros, serviço) '
+                                'e continua a partir daí; não repitas o que já está concluído.')
     if plan.get('write_paths'):
         effective_user_text += ('\n[Âmbito de escrita reservado para este plano: ' + ', '.join(plan['write_paths']) +
                                 '. Outros planos podem estar ativos nesta pasta. Altera apenas estes ficheiros; '
@@ -2598,7 +2654,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(200, activity)
         if u.path == "/api/chat/job":
             cid = (parse_qs(u.query).get("id") or [""])[0]
-            return self._reply(200, chat_activity_snapshot(cid))
+            return self._reply(200, chat_activity_snapshot(cid, (parse_qs(u.query).get("v") or [None])[0]))
         if u.path == "/api/chat/subchat":
             qs = parse_qs(u.query)
             try:
@@ -2647,7 +2703,13 @@ class Handler(BaseHTTPRequestHandler):
             # Extensões de imagem/fonte + raiz real. Sem isto, /api/image servia
             # QUALQUER ficheiro legível em /home/hubert (chaves SSH, .env, etc.).
             if real and mime and os.path.isfile(real) and any(_inside(real, root) for root in allowed):
-                headers = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"} if ext == ".svg" else None
+                headers = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"} if ext == ".svg" else {}
+                # Attachments never change in place: let the browser keep them instead of fetching 30+ MB per chat open.
+                st = os.stat(real)
+                etag = '"%x-%x"' % (st.st_mtime_ns, st.st_size)
+                headers.update({"Cache-Control": "private, max-age=86400", "ETag": etag})
+                if self.headers.get("If-None-Match") == etag:
+                    return self._reply(304, b"", mime, headers)
                 return self._reply(200, pathlib.Path(real).read_bytes(), mime, headers)
             return self._reply(404, {"error": "Imagem não encontrada"})
         self._reply(404, {"error": "Não encontrado"})
