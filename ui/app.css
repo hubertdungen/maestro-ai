@@ -2516,3 +2516,5 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 #stPanel.st-away .st-main{opacity:.85}
 /* toast de atualização não passa por baixo do painel Strategy */
 @media (min-width:1081px){body.st-open .update-toast{width:min(920px,calc(100% - var(--st-w,0px) - 24px));margin-left:12px;margin-right:calc(var(--st-w,0px) + 12px);max-width:none}}
+
+#stPanel.st-idle{display:none}

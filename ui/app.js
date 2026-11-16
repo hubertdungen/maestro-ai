@@ -6200,7 +6200,10 @@ function esc(s) {
     if (!panel) return;
     var insp = document.getElementById('inspectorRight'), ir = insp ? insp.getBoundingClientRect() : null;
     panel.style.right = ((ir && ir.width > 8) ? window.innerWidth - ir.left + 10 : 10) + 'px';
-    var open = isOpen(); panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
+    /* minimalista: só existe quando há um plano à vista (largo) ou plano no chat (gaveta); senão não ocupa nada */
+    var idle = wide() ? (panel.classList.contains('st-away') || !current()) : !current();
+    panel.classList.toggle('st-idle', idle);
+    var open = isOpen() && !idle; panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
     document.body.classList.toggle('st-open', open && wide());
     var pane = document.getElementById('paneChat');
     /* 40px do #stToggle (left:-40px) + 2 de folga */
@@ -6214,7 +6217,7 @@ function esc(s) {
     panel.querySelector('header strong').textContent = ui('Estratégia','Strategy');
     panel.querySelector('#stClose').setAttribute('aria-label', ui('Fechar','Close'));
     window.dispatchEvent(new Event('strategyvisibilitychange'));
-    var m = open ? current() : null; /* sem plano à vista mostra o último/ao vivo, nunca vazio */
+    var m = open ? current() : null;
     var highlight = thinkNext && m && m.turn === pendingTurn && (window.__maestroState || {}).currentChat.id === pendingChat;
     if (highlight) turn = pendingTurn;
     var LBL = labels();
@@ -6248,7 +6251,7 @@ function esc(s) {
     var sc = document.getElementById('chatScroll'); if (sc) sc.addEventListener('scroll', followScroll, {passive:true});
     window.addEventListener('resize', function(){ sig = ''; refresh(); });
     setInterval(function(){ if (!document.hidden){ if (wide()) followScroll(); refresh(); } }, 1500);
-    refresh();
+    if (wide()) followScroll(); refresh();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
 })();
