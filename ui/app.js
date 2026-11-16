@@ -1183,7 +1183,7 @@ function esc(s) {
           '</div>' +
           (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? '<iframe class="code-visual" sandbox="allow-scripts" srcdoc="' + esc(visualTheme() + code + '<script>(function(){function s(){parent.postMessage({mvh:document.documentElement.scrollHeight},"*")}addEventListener("load",s);if(window.ResizeObserver)new ResizeObserver(s).observe(document.body)})()<\/script>').replace(/"/g, "&quot;") + '"></iframe>' : '') +
           '<pre' + (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? ' hidden' : '') + '><code>' + esc(code) + '</code></pre>' +
-          (/^(bash|sh|shell)$/i.test(lang) && !/(^|\n)\s*(pwsh|powershell|Install-Module|Connect-[A-Z]\w+|New-[A-Z]\w+|Add-[A-Z]\w+|Set-[A-Z]\w+|Get-[A-Z]\w+|Test-[A-Z]\w+|az |winget |choco )/.test(code) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button></div>' : '') +
+          (/^(bash|sh|shell)$/i.test(lang) && !/(^|\n)\s*(pwsh|powershell|Install-Module|Connect-[A-Z]\w+|(New|Add|Set|Get|Test|Remove)-[A-Z]\w+|az |winget |choco )/.test(code) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button></div>' : '') +
         '</div>'
       );
       return "\n" + token + "\n";
