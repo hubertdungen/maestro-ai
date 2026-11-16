@@ -88,16 +88,9 @@ def _git(root, *args):
     return subprocess.run(['git', '-C', str(root)] + list(args), capture_output=True, text=True, timeout=15)
 
 
-def repo_findings(text, cwd, since, request=''):
-    """What the turn really left behind: files it changed and did not commit, commits it made and did not push.
-
-    Repositories are the project folder plus every path the reply mentions. Only changes made
-    after ``since`` count, so work in progress that was already there is never blamed on the turn.
-    """
-    if re.search(_KEEP_LOCAL, request or '', re.I):
-        return []  # the user asked for it to stay local
+def named_repos(text, cwd):
+    """Repositories the turn points at: the project folder and every path the reply spells out."""
     roots = []
-    mentioned = None
     for raw in [str(cwd or '')] + re.findall(r'(?<![\w:/.])(?:~|/[\w.@+-]+)(?:/[\w.@+-]+)+', str(text or '')):
         path = pathlib.Path(os.path.expanduser(raw.rstrip('.,;:)`')))
         try:
@@ -107,6 +100,22 @@ def repo_findings(text, cwd, since, request=''):
                 roots.append(path)
         except OSError:
             continue
+    return roots
+
+
+def git_wording(hits):
+    return [h for h in hits if h in _GIT]
+
+
+def repo_findings(text, cwd, since, request=''):
+    """What the turn really left behind: files it changed and did not commit, commits it made and did not push.
+
+    Repositories are the project folder plus every path the reply mentions. Only changes made
+    after ``since`` count, so work in progress that was already there is never blamed on the turn.
+    """
+    if re.search(_KEEP_LOCAL, request or '', re.I):
+        return []  # the user asked for it to stay local
+    roots = named_repos(text, cwd)
     # Replies often name files relative to a repository they never spell out ("ui/app.css"): look in the
     # home repositories too, but there only blame files the reply itself names.
     mentioned = len(roots)
