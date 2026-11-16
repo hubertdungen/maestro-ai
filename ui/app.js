@@ -6207,8 +6207,13 @@ function esc(s) {
     var insp = document.getElementById('inspectorRight'), ir = insp ? insp.getBoundingClientRect() : null;
     panel.style.right = ((ir && ir.width > 8) ? window.innerWidth - ir.left + 10 : 10) + 'px';
     /* minimalista: só existe quando há um plano à vista (largo) ou plano no chat (gaveta); senão não ocupa nada */
-    var idle = wide() ? (panel.classList.contains('st-away') || !current()) : !current();
-    panel.classList.toggle('st-idle', idle); document.body.classList.toggle('st-none', idle && wide());
+    /* histerese: vazio/cheio só se aplica depois de se manter ~0,9 s; senão pisca a cada poll, scroll ou troca de pedido */
+    var idleWant = wide() ? (panel.classList.contains('st-away') || !current()) : !current();
+    var applyIdle = function(v){ panel.classList.toggle('st-idle', v); document.body.classList.toggle('st-none', v && wide()); };
+    if (!refresh.__applied) { refresh.__applied = true; applyIdle(idleWant); }
+    else if (idleWant === panel.classList.contains('st-idle')) { clearTimeout(refresh.__idleT); refresh.__idleT = 0; }
+    else if (!refresh.__idleT || refresh.__idleWant !== idleWant) { clearTimeout(refresh.__idleT); refresh.__idleWant = idleWant; refresh.__idleT = setTimeout(function(){ refresh.__idleT = 0; applyIdle(refresh.__idleWant); refresh(); }, 900); }
+    var idle = panel.classList.contains('st-idle');
     var open = isOpen() && !idle; panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
     document.body.classList.toggle('st-open', open && wide());
     var pane = document.getElementById('paneChat');
