@@ -1776,7 +1776,7 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
     the finished plan and returned the very same text until the cycles ran out.
     """
     run = run or execute_agent_turn
-    hits, repos = [], []
+    hits, repos, history = [], [], []
     for cycle in range(1, QAGATE.MAX_CYCLES + 1):
         # Text says what the engine claims; the repositories say what it really left behind.
         seen, repos = repos, QAGATE.repo_findings(res.get("text"), cwd, job["t0"], user_text)
@@ -1785,9 +1785,11 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
             break  # the maker looked and left those files on purpose: do not ask a third time
         if not hits or cycle == QAGATE.MAX_CYCLES or job.get("status") == "stopped":
             break
+        why = QAGATE.labels(hits)
+        history.append(why)
         if task_id:
-            TURN_QUEUE.update(task_id, qa_cycles=cycle)
-        _push_job_step(job, f"🔁 Porta de qualidade: resposta incompleta, a corrigir já (ciclo {cycle})")
+            TURN_QUEUE.update(task_id, qa_cycles=cycle, qa_reasons=history)
+        _push_job_step(job, f"🔁 Porta de qualidade (ciclo {cycle}): " + "; ".join(why)[:200])
         # One write-capable engine with the full conversation prompt; never the workflow again.
         redo_plan = {k: v for k, v in plan.items() if k not in ("workflow", "no_tools", "task_role")}
         redo_plan.update(multi_agent=False, read_only=False, qa_cycle=cycle)
@@ -1802,7 +1804,8 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
         kept = res.get("plan") or {}
         res = dict(redo, elapsed_s=round(time.time() - job["t0"], 1),
                    tools=list(res.get("tools") or []) + list(redo.get("tools") or []),
-                   plan=dict(redo.get("plan") or {}, **({"workflow": kept["workflow"]} if kept.get("workflow") else {}), qa_cycles=cycle))
+                   plan=dict(redo.get("plan") or {}, **({"workflow": kept["workflow"]} if kept.get("workflow") else {}),
+                             qa_cycles=cycle, qa_reasons=list(history)))
     if hits:
         repos = QAGATE.repo_findings(res.get("text"), cwd, job["t0"], user_text)
         left = QAGATE.check(res.get("text"), user_text) + repos

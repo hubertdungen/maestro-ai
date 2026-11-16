@@ -71,6 +71,16 @@ ENGINE_DISPLAY = {
 }
 
 
+def _save_json(path, data, **dumps) -> None:
+    """Whole-file replace. Several processes write this state (web server, cron, agents running --status);
+    plain write_text let two of them interleave and leave invalid JSON behind (the Gemini quota signal did)."""
+    path = pathlib.Path(path)
+    import threading
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")  # unique per writer, threads included
+    tmp.write_text(json.dumps(data, **dumps))
+    os.replace(tmp, path)
+
+
 def ensure_dirs() -> None:
     for d in (STATE_DIR, RUN_DIR):
         d.mkdir(parents=True, exist_ok=True)
@@ -158,7 +168,7 @@ def get_claude_quota(force_refresh: bool = False) -> dict:
                     )
                     with urllib.request.urlopen(req, timeout=4) as r:
                         api_data = json.loads(r.read().decode("utf-8"))
-                    cache_file.write_text(json.dumps({"ts": now, "data": api_data}, ensure_ascii=False))
+                    _save_json(cache_file, {"ts": now, "data": api_data}, ensure_ascii=False)
                     # Sincroniza também ~/.claude/limits/live.json para o ccquota
                     try:
                         fh_api = api_data.get("five_hour") or {}
@@ -172,7 +182,7 @@ def get_claude_quota(force_refresh: bool = False) -> dict:
                             "seven_day": {"used_percentage": float(sd_api.get("utilization") or 0.0), "resets_at": sd_ts},
                             "ts": now,
                         }
-                        CLAUDE_LIVE.write_text(json.dumps(live_sync, indent=2))
+                        _save_json(CLAUDE_LIVE, live_sync, indent=2)
                     except Exception:
                         pass
         except Exception:
@@ -276,7 +286,7 @@ def claude_login_warning(now: float | None = None, status: dict | None = None) -
                                  env={k: v for k, v in os.environ.items() if k != "CCA_TOKEN"})
             status = {k: v for k, v in json.loads(out.stdout).items() if k in ("loggedIn", "loginExpiresAt")}
             ensure_dirs()
-            cache.write_text(json.dumps({"checked": now, "status": status}))
+            _save_json(cache, {"checked": now, "status": status})
         except (OSError, ValueError, subprocess.SubprocessError):
             return ""  # unknown is not a warning
     if status.get("loggedIn") is False:
@@ -349,7 +359,7 @@ def get_codex_quota(force_refresh: bool = False) -> dict:
                     )
                     with urllib.request.urlopen(req, timeout=4) as r:
                         wham = json.loads(r.read().decode("utf-8"))
-                    cache_file.write_text(json.dumps({"ts": now, "data": wham}, ensure_ascii=False))
+                    _save_json(cache_file, {"ts": now, "data": wham}, ensure_ascii=False)
         except Exception:
             pass
 
@@ -465,7 +475,7 @@ def _get_deepseek_balance(force_refresh: bool = False) -> dict:
             "source": "api_live",
             "ts": time.time(),
         }
-        DS_BALANCE_CACHE.write_text(json.dumps(res, ensure_ascii=False))
+        _save_json(DS_BALANCE_CACHE, res, ensure_ascii=False)
         return res
     except Exception:
         return {
@@ -598,7 +608,7 @@ def get_agy_quota_signal(force_refresh: bool = False) -> dict | None:
 
     if sig:
         try:
-            AGY_QUOTA_SIGNAL_FILE.write_text(json.dumps({**sig, "saved_at": now}, ensure_ascii=False))
+            _save_json(AGY_QUOTA_SIGNAL_FILE, {**sig, "saved_at": now}, ensure_ascii=False)
         except OSError:
             pass
 
@@ -664,7 +674,7 @@ def get_antigravity_status(force_refresh: bool = False) -> dict:
                         summary_resp = json.loads(rq.read().decode("utf-8"))
 
                     quota_data = {"models": models_resp.get("models") or {}, "summary": summary_resp}
-                    cache_file.write_text(json.dumps({"ts": now, "data": quota_data}, ensure_ascii=False))
+                    _save_json(cache_file, {"ts": now, "data": quota_data}, ensure_ascii=False)
         except Exception:
             pass
 
@@ -718,6 +728,7 @@ def get_antigravity_status(force_refresh: bool = False) -> dict:
         )
     elif limited and reset_at:
         quota_source = "cooldown"
+        gemini_used_pct = 100.0  # blocked is blocked: never show "0% used" next to a cooldown
         quota_note = "Antigravity em cooldown ativo; o Maestro usa o substituto disponível."
     elif quota_unknown:
         quota_note = "Não foi possível ler a quota OAuth do Antigravity; estado mostrado é conservador."
@@ -742,12 +753,12 @@ def get_antigravity_status(force_refresh: bool = False) -> dict:
             if AGY_COOLDOWN_FILE.exists():
                 prev = json.loads(AGY_COOLDOWN_FILE.read_text())
             if abs(float(prev.get("until") or 0) - reset_epoch) > 60 or prev.get("source") != quota_source:
-                AGY_COOLDOWN_FILE.write_text(json.dumps({
+                _save_json(AGY_COOLDOWN_FILE, {
                     "until": reset_epoch,
                     "reason": quota_note or "Quota individual do Antigravity esgotada.",
                     "source": quota_source,
                     "updated_at": now,
-                }, ensure_ascii=False))
+                }, ensure_ascii=False)
         except Exception:
             pass
     elif not limited:
