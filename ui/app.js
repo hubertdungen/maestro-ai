@@ -252,7 +252,7 @@ function esc(s) {
   var drawerDrag = null;
   var suppressClickUntil = 0;
   var DRAG_AXIS_PX = 6;
-  var EDGE_OPEN_PX = 26;
+  var EDGE_OPEN_PX = 72, EDGE_SYSTEM_PX = 32; // 0–32px = gesto «voltar» do sistema
   var CLOSE_RATIO = 0.32;
   var OPEN_RATIO = 0.24;
   var FLING_VELOCITY = 0.38;
@@ -393,9 +393,9 @@ function esc(s) {
       el = leftEl;
     } else if (rightGrip && rightGrip.contains(e.target)) {
       el = rightEl;
-    } else if (e.clientX <= EDGE_OPEN_PX) {
+    } else if (e.clientX >= EDGE_SYSTEM_PX && e.clientX <= EDGE_OPEN_PX) {
       el = leftEl;
-    } else if (e.clientX >= window.innerWidth - EDGE_OPEN_PX) {
+    } else if (e.clientX <= window.innerWidth - EDGE_SYSTEM_PX && e.clientX >= window.innerWidth - EDGE_OPEN_PX) {
       el = rightEl;
     } else {
       return;
