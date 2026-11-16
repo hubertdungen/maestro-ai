@@ -1,29 +1,48 @@
 # Maestro AI
 
-**A local orchestrator for AI coding agents.** Maestro routes each request to the right engine (Claude, Codex, Gemini/Antigravity, DeepSeek), plans multi-agent work as a dependency graph, and keeps every model inside a daily and weekly quota budget. It ships with a web app (desktop, tablet and phone, installable as a PWA).
+**One front door for every AI coding agent you pay for.** Maestro reads each request, picks the right engine (Claude, Codex, Gemini/Antigravity, DeepSeek), splits big jobs into a multi-agent plan, and keeps every model inside its daily and weekly quota — so you stop babysitting limits and start shipping.
 
 🇵🇹 [Versão em português (PT-PT)](README.pt-PT.md)
 
+<p align="center"><img src="docs/screenshots/maestro-desktop.jpg" width="900" alt="Maestro AI"/></p>
+
 > **License:** source-available, not open source. Free for personal, study, research and hobby use under [PolyForm Noncommercial 1.0.0](LICENSE). Commercial use needs a paid licence — see [COMMERCIAL.md](COMMERCIAL.md) (reference price: €100 in Europe).
 
-## What it does
+## Why
 
-- **Engine routing and fallback.** Classifies a request by domain and size, picks the engine, and falls back by quota (e.g. Codex → Antigravity → Claude → DeepSeek).
-- **Multi-agent workflows.** Complex requests become a JSON plan (scout → specialist → review), executed as a DAG with parallel read-only tasks. Plans and results are persisted and resumable.
-- **Quota budgets.** Weekly quotas are split into daily budgets; DeepSeek has a per-cycle money budget with yellow/red lines for justified extra use.
-- **Read-only scouts.** A restricted DeepSeek API mode that can only list folders, read excerpts and grep inside the project.
-- **Strategy panel.** Follows the request you are reading and shows the orchestrator's reasoning, the agent graph, per-node status and a decision timeline.
-- **Web studio.** Chats and folders with archive, a request queue, live quota and fleet panels, six visual worlds, PT/EN interface, installable PWA.
-- **Interactive answers.** Replies can render inline HTML, tables, charts, and step-by-step Q&A cards per platform.
-- **Optional integrations** (NAS media, Home Assistant, 3D printers) live in `maestro_features.py` and are configured by you.
+Subscriptions and API credits run out at different times, each CLI has its own limits, and a long task can burn a week of quota in an afternoon. Maestro treats them as one fleet: it knows what each engine has left, routes by domain and size, and falls back automatically when one is exhausted.
 
-See [ORCHESTRATION.md](ORCHESTRATION.md) (in Portuguese) for the design details and [DEEPSEEK_PRICING.md](DEEPSEEK_PRICING.md) for the cost model.
+## How it works
+
+```text
+request ─► triage ─► simple?  ─► one engine ─► answer
+             (domain,   │
+              size,     └─ big? ─► plan (JSON DAG)
+              quota)               ├─ scout      (read-only, cheap)
+                                   ├─ specialist (writes code)  ┐ parallel
+                                   └─ reviewer   (checks it)    ┘ where independent
+                                              │
+                              QA gate ◄───────┘ ─► answer + Strategy panel
+```
+
+## Features
+
+| | |
+|---|---|
+| **Engine routing and fallback** | Classifies by domain and size, then falls back by quota (e.g. Codex → Antigravity → Claude → DeepSeek). |
+| **Multi-agent workflows** | Complex requests become a dependency graph (scout → specialist → review), run with parallel read-only tasks. Plans and results are persisted and resumable. |
+| **Strategy panel** | Beside the chat: the orchestrator's reasoning, the agent graph, per-node status, engine/model used and a decision timeline. Follows the request you are reading; with none in view it shows the latest or live plan. |
+| **Quota budgets** | Weekly quotas split into daily budgets; DeepSeek has a per-cycle money budget with a daily bar and yellow/red lines for justified extra use. |
+| **Read-only scouts** | A restricted DeepSeek API mode that can only list folders, read excerpts and grep inside the project. |
+| **Web studio** | Chats and folders with archive, request queue, live quota and fleet panels, six visual worlds, PT/EN UI, installable PWA for desktop, tablet and phone. |
+| **Interactive answers** | Replies can render inline HTML, tables, charts and step-by-step Q&A cards per platform. |
+| **Optional integrations** | NAS media, Home Assistant and 3D printers live in `maestro_features.py`; you configure them. |
+
+Design details: [ORCHESTRATION.md](ORCHESTRATION.md) (in Portuguese). Cost model: [DEEPSEEK_PRICING.md](DEEPSEEK_PRICING.md).
 
 ## Screenshots
 
-<p align="center"><img src="docs/screenshots/maestro-desktop.jpg" width="900" alt="Maestro AI: chats on the left, the Strategy panel beside the request, live quotas on the right"/></p>
-
-*Desktop: chat list, conversation, the **Strategy panel** (the orchestrator's reasoning and the agent graph of the request you are reading) and live quota bars.*
+The **Strategy panel** (right of the chat) shows the plan the orchestrator built for the request: its reasoning, who does what, and what is done.
 
 <p align="center"><img src="docs/screenshots/maestro-tablet.jpg" width="260" alt="Tablet (PWA)"/> &nbsp; <img src="docs/screenshots/maestro-mobile.jpg" width="170" alt="Phone (PWA)"/></p>
 
@@ -43,7 +62,7 @@ Each world re-skins colour, type and effects of the whole app. Pick one from the
 <td align="center"><img src="docs/screenshots/theme-dungen.jpg" width="300" alt="Hubert Dungen"/><br/><sub>Hubert Dungen</sub></td>
 </tr></table>
 
-*All captures use a demo workspace with fictional conversations; the quota bars show demo values.*
+*Captures use a demo workspace with fictional conversations; quota bars show demo values.*
 
 ## Requirements
 
@@ -56,10 +75,10 @@ Each world re-skins colour, type and effects of the whole app. Pick one from the
 ```bash
 git clone https://github.com/hubertdungen/maestro-ai.git
 cd maestro-ai
-python3 maestro.py --status          # quotas, resets, balances
+python3 maestro.py --status                # quotas, resets, balances
 python3 maestro.py --plan "your request"   # preview the agent plan
 python3 maestro.py "your request"          # run it
-python3 maestro_web.py               # web studio on port 8109
+python3 maestro_web.py                     # web studio on port 8109
 python3 -m unittest discover -s tests -q
 ```
 

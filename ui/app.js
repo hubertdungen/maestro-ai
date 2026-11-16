@@ -6212,7 +6212,7 @@ function esc(s) {
     panel.querySelector('header strong').textContent = ui('Estratégia','Strategy');
     panel.querySelector('#stClose').setAttribute('aria-label', ui('Fechar','Close'));
     window.dispatchEvent(new Event('strategyvisibilitychange'));
-    var m = open && !panel.classList.contains('st-away') ? current() : null;
+    var m = open ? current() : null; /* sem plano à vista mostra o último/ao vivo, nunca vazio */
     var highlight = thinkNext && m && m.turn === pendingTurn && (window.__maestroState || {}).currentChat.id === pendingChat;
     if (highlight) turn = pendingTurn;
     var LBL = labels();
