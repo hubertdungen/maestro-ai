@@ -1738,15 +1738,15 @@ html[data-icon-style="duotone"] .folder-pill span:first-child {
     transform: translateY(-50%);
     touch-action: none; user-select: none; -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
-    opacity: .9; transition: opacity .18s ease;
+    opacity: .22; transition: opacity .18s ease;
+    pointer-events: none; /* só dica visual; o arrasto é feito pela zona 32–72px em app.js */
   }
   /* Afastado da margem: os ~32px de fora são do gesto «voltar» do Android. */
   .edge-grip-left { left: 32px; border-radius: 13px; }
   .edge-grip-right { right: 32px; border-radius: 13px; }
   .edge-grip span {
-    width: 5px; height: 44px; border-radius: 999px;
-    background: rgba(148,163,184,.5);
-    box-shadow: 0 0 0 1px rgba(0,0,0,.28), 0 2px 9px rgba(0,0,0,.5);
+    width: 3px; height: 40px; border-radius: 999px;
+    background: rgba(148,163,184,.45);
     transition: height .18s ease, background .18s ease;
   }
   .edge-grip:active span, .edge-grip.dragging span {
