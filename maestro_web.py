@@ -2197,6 +2197,27 @@ def steer_prepare(body):
         note = "\n[PEDIDO INTERROMPIDO]: " + str((old or {}).get("text") or "")[:1500]
         if snap.get("steps"):
             note += "\n[PASSOS JÁ EXECUTADOS NO TURNO ANTERIOR INTERROMPIDO]: " + " -> ".join(snap["steps"][-5:]) + "\n"
+    # Keep the interrupted strategy on its request before the worker is stopped.
+    # The stopped worker deliberately does not append a reply for a steer.
+    previous_turn = snap.get("task_id") or (old or {}).get("id")
+    previous_plan = copy.deepcopy(snap.get("plan") or (old or {}).get("plan") or {})
+    if previous_turn and previous_plan:
+        previous_plan["status"] = "interrupted"
+        if snap.get("workflow"):
+            workflow = copy.deepcopy(snap["workflow"])
+            workflow["status"] = "interrupted"
+            for node in workflow.get("nodes", []):
+                if node.get("status") == "running":
+                    node["status"] = "interrupted"
+            previous_plan["workflow"] = workflow
+        with CHAT_STORAGE_LOCK:
+            previous_chat = load_chat(cid)
+            if previous_chat:
+                request = next((m for m in previous_chat.get("messages", [])
+                                if m.get("role") == "user" and m.get("turn_id") == previous_turn), None)
+                if request is not None:
+                    request["plan"] = previous_plan
+                    save_chat(previous_chat)
     stop_chat_job(cid, reason="steer")
     return dict(body, steer=True, force=True, steer_note=note, steer_front=True)
 

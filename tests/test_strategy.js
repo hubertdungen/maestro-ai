@@ -1,0 +1,27 @@
+// node tests/test_strategy.js — exercise the real strategy model with stored and live turns.
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+const src = fs.readFileSync(__dirname + '/../ui/app.js', 'utf8');
+const start = src.indexOf('/* ---- ESTRATÉGIA:');
+const end = src.indexOf('/* Pensamentos do orquestrador:', start);
+const state = {currentChat:{id:'chat', messages:[]}};
+const context = {window:{__maestroState:state, addEventListener(){}}, document:{readyState:'loading', addEventListener(){}}};
+vm.createContext(context);
+vm.runInContext(src.slice(start, end).replace('  function build(){', '  S.inspect = current;\n  function build(){'), context);
+const S = context.window.maestroStrategy;
+const plan = {exec_engine:'codex', exec_engine_name:'Codex', model_id:'gpt-6.1-sol'};
+state.currentChat.messages = [{role:'user', turn_id:'old', text:'Original', plan:{...plan,status:'interrupted'}}];
+assert.equal(S.inspect().nodes[0].status, 'interrupted');
+state.currentChat.messages.push({role:'user',turn_id:'new',text:'Orientação'});
+state.activeJob = {chat_id:'chat',task_id:'new',status:'running',plan};
+assert.equal(S.inspect().nodes[0].status, 'running');
+assert.equal(S.inspect().turn, 'new');
+assert.equal(S.inspect().total, 2);
+assert.equal(S.inspect().label, 'Orientação');
+state.activeJob.workflow = {turn_id:'new', nodes:[{id:'a',status:'done'},{id:'b',status:'running',depends_on:['a']}]};
+assert.equal(S.inspect().nodes.length, 2);
+assert.equal(S.inspect().total, 2);
+state.activeJob.chat_id = 'other';
+assert.equal(S.inspect().turn, 'old');
+state.currentChat.messages = [];
+assert.equal(S.inspect(), null);
+console.log('Strategy: interrupted history, single live turn, workflow replacement, chat isolation: OK');

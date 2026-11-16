@@ -1572,8 +1572,7 @@ function esc(s) {
           '</div>' +
         '</details>';
     }
-    if (m.plan && m.plan.workflow) inner += renderWorkflow(m.plan.workflow, m.turn_id);
-    else if (m.role === "assistant" && m.plan && m.turn_id) turn.setAttribute("data-wf-turn", m.turn_id); /* Strategy também para pedidos sem multiagente */
+    if (m.plan && m.turn_id) turn.setAttribute("data-wf-turn", m.turn_id); /* O plano lateral acompanha o turno inteiro, incluindo pedidos interrompidos. */
     inner += renderRichMarkdown(String(m.text || "").replace(/^\[apply-proposal-[^\]\n]+\]\n/, ""));
     if (m.docs && m.docs.length) {
       inner += '<div class="doc-chips">' + m.docs.map(function(d){
@@ -1868,8 +1867,8 @@ function esc(s) {
       }
     }
 
-    var wf = el.querySelector(".live-workflow");
-    if (wf) updateWorkflowPanel(wf, j.workflow);
+    if (!waiting && (j.workflow || Object.keys(j.plan || {}).length)) el.setAttribute("data-wf-turn", j.task_id || (j.workflow || {}).turn_id || "live");
+    else el.removeAttribute("data-wf-turn");
     var sub = el.querySelector(".step-sub");
     var progress = el.querySelector('.live-progress');
     if (!progress && sub) {
@@ -6267,9 +6266,9 @@ function esc(s) {
           role:n.role, deps:n.depends_on || [], note:n.error || n.reason || '', text:typeof r === 'string' ? r : (r.text || ''), started:n.started_at, finished:n.finished_at, guided:(n.guidance || []).length}; })};
   };
   // Pedido sem workflow multiagente: plano de um só passo montado a partir de m.plan.
-  S.synth = function(msg){ var p = msg.plan || {};
-    return {turn_id:msg.turn_id, coordinator:p.maestro_name || '', planning_source:'local_capability', reason:p.reason || '', created_at:msg.ts, status:'done',
-      nodes:[{id:'n1', title:(p.agents && p.agents.length ? p.agents.join(' ➔ ') : (p.exec_engine_name || ui('Execução','Execution'))), status:'done', engine:p.exec_engine || '', model_id:p.model_id || '', role:'executor'}]}; };
+  S.synth = function(msg){ var p = msg.plan || {}, status = msg.status || p.status || 'done';
+    return {turn_id:msg.turn_id, coordinator:p.maestro_name || '', planning_source:'local_capability', reason:p.reason || '', created_at:msg.ts, status:status,
+      nodes:[{id:'n1', title:(p.agents && p.agents.length ? p.agents.join(' ➔ ') : (p.exec_engine_name || ui('Execução','Execution'))), status:status, engine:p.exec_engine || '', model_id:p.model_id || '', role:'executor'}]}; };
   S.fromSubtasks = function(tasks){
     return {turn:'', coord:ui('Orquestrador','Orchestrator'), reason:'', source:'', nodes:(tasks || []).map(function(t){
       return {id:t.node_id, title:t.title, status:normStatus(t.status), engine:t.engine, model:t.model, role:t.role, deps:t.deps || [], note:'', text:''}; })};
@@ -6362,15 +6361,17 @@ function esc(s) {
     // Chave canónica = turn_id; sem ele, posição na lista ('i:N'), igual à que followScroll calcula.
     var lastUser = '';
     (chat.messages || []).forEach(function(msg){ if (msg.role === 'user') lastUser = String(msg.text || '').replace(/\s+/g, ' ').trim();
-      var pw = msg.plan && msg.plan.workflow && msg.plan.workflow.nodes ? msg.plan.workflow : (msg.role === 'assistant' && msg.plan && msg.turn_id ? S.synth(msg) : null);
+      var pw = msg.plan && msg.plan.workflow && msg.plan.workflow.nodes ? msg.plan.workflow : (msg.plan && msg.turn_id ? S.synth(msg) : null);
       if (pw) {
       var k = msg.turn_id || pw.turn_id || ('i:' + list.length);
       list = list.filter(function(x){ return x[0] !== k; }); list.push([k, pw, 0, lastUser]); } });
     // O snapshot ao vivo substitui o gravado do mesmo pedido (por task_id ou turn_id).
-    if (job && job.status === 'running' && job.chat_id === chat.id && job.workflow && job.workflow.nodes) {
-      var key = job.task_id || job.workflow.turn_id || 'live';
-      list = list.filter(function(x){ return x[0] !== key && x[0] !== job.workflow.turn_id; });
-      list.push([key, job.workflow, 1, lastUser]);
+    if (job && job.status === 'running' && job.chat_id === chat.id && (job.workflow || Object.keys(job.plan || {}).length)) {
+      var key = job.task_id || (job.workflow || {}).turn_id || 'live';
+      var liveWorkflow = job.workflow && job.workflow.nodes ? job.workflow : S.synth({plan:job.plan, turn_id:key, status:'running'});
+      list = list.filter(function(x){ return x[0] !== key && x[0] !== liveWorkflow.turn_id; });
+      var request = (chat.messages || []).find(function(msg){ return msg.role === 'user' && msg.turn_id === key; });
+      list.push([key, liveWorkflow, 1, request ? request.text : lastUser]);
     }
     if (!list.length) return null;
     var wanted = thinkNext && chat.id === pendingChat ? pendingTurn : turn;
@@ -6381,7 +6382,7 @@ function esc(s) {
     var sc = document.getElementById('chatScroll'); if (!sc || sc.__restoring) return; /* a trocar de chat: sem reflows nem trocas de pedido a meio */
     var vr = sc.getBoundingClientRect(), mid = vr.top + vr.height * 0.5; var best = null, bd = 1e9, bestEl = null;
     var i = 0, total = 0;
-    sc.querySelectorAll('.wf-panel, .live-workflow, .turn[data-wf-turn]').forEach(function(el){
+    sc.querySelectorAll('.turn[data-wf-turn]').forEach(function(el){
       if (!el.matches('.live-workflow') || el.children.length) total++;
       if (el.matches('.live-workflow') && !el.children.length) return;
       var idx = i++, r = el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
