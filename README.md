@@ -1,8 +1,8 @@
-# Maestro AI
-
-**One front door for every AI coding agent you pay for.** Maestro reads each request, picks the right engine (Claude, Codex, Gemini/Antigravity, DeepSeek), splits big jobs into a multi-agent plan, and keeps every model inside its daily and weekly quota — so you stop babysitting limits and start shipping.
-
-🇵🇹 [Versão em português (PT-PT)](README.pt-PT.md)
+<p align="center"><img src="maestro-mark.svg" width="84" alt=""/></p>
+<h1 align="center">Maestro AI</h1>
+<p align="center"><b>One front door for every AI coding agent you pay for.</b><br/>Routes each request to the right engine, splits big jobs into a multi-agent plan, and keeps every model inside its quota.</p>
+<p align="center"><a href="README.pt-PT.md">🇵🇹 Português</a> · <a href="#features">Features</a> · <a href="#the-strategy-panel">Strategy panel</a> · <a href="#themes-worlds">Themes</a> · <a href="#quick-start">Quick start</a> · <a href="ORCHESTRATION.md">Design</a></p>
+<p align="center"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"/> <img alt="License" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0-blue"/> <img alt="Engines" src="https://img.shields.io/badge/engines-Claude%20%C2%B7%20Codex%20%C2%B7%20Gemini%20%C2%B7%20DeepSeek-8A2BE2"/> <img alt="PWA" src="https://img.shields.io/badge/PWA-desktop%20%C2%B7%20tablet%20%C2%B7%20phone-0A7"/></p>
 
 <p align="center"><img src="docs/screenshots/maestro-desktop.jpg" width="900" alt="Maestro AI"/></p>
 
@@ -39,6 +39,17 @@ request ─► triage ─► simple?  ─► one engine ─► answer
 | **Optional integrations** | NAS media, Home Assistant and 3D printers live in `maestro_features.py`; you configure them. |
 
 Design details: [ORCHESTRATION.md](ORCHESTRATION.md) (in Portuguese). Cost model: [DEEPSEEK_PRICING.md](DEEPSEEK_PRICING.md).
+
+## The Strategy panel
+
+<p align="center"><img src="docs/screenshots/strategy-panel.jpg" width="380" alt="Strategy panel"/></p>
+
+Every multi-agent request gets a live plan next to the chat:
+
+- **Orchestrator thinking** — why the work was split the way it was.
+- **Agent graph** — scout → specialist → reviewer, with status, engine and model per node.
+- **Decision timeline** — start, finish and guidance events with timestamps.
+- **Always there** — follows the request you are reading, shows the live plan while it runs, and becomes a slide-over drawer on narrow windows and phones.
 
 ## Screenshots
 
