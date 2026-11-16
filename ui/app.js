@@ -1183,7 +1183,7 @@ function esc(s) {
           '</div>' +
           (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? '<iframe class="code-visual" sandbox="allow-scripts" srcdoc="' + esc(visualTheme() + code + '<script>(function(){function s(){parent.postMessage({mvh:document.documentElement.scrollHeight},"*")}addEventListener("load",s);if(window.ResizeObserver)new ResizeObserver(s).observe(document.body)})()<\/script>').replace(/"/g, "&quot;") + '"></iframe>' : '') +
           '<pre' + (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? ' hidden' : '') + '><code>' + esc(code) + '</code></pre>' +
-          (/^(bash|sh|shell)$/i.test(lang) && !/(^|\n)\s*(pwsh|powershell|Install-Module|Connect-[A-Z]\w+|(New|Add|Set|Get|Test|Remove)-[A-Z]\w+|az |winget |choco )/.test(code) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button></div>' : '') +
+          (/^(bash|sh|shell)$/i.test(lang) && !/(^|\n)\s*(pwsh|powershell|Install-Module|Connect-[A-Z]\w+|(New|Add|Set|Get|Test|Remove)-[A-Z]\w+|az [a-z-]+ |winget |choco )/.test(code) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button></div>' : '') +
         '</div>'
       );
       return "\n" + token + "\n";
@@ -1337,11 +1337,14 @@ function esc(s) {
       (m.plan ? "P" + (m.plan.domain || "") + (m.plan.dimension || "") + (m.plan.agents || []).join(",") + (m.tools || []).join(",") : "");
   }
 
+  var PENDING_RE = /\b(?:porta de qualidade|o que falta|ainda nao (?:esta|foi|ficou)|por fazer|ficou pendente|pendentes?|em falta|nao se pode dizer|not done yet|still (?:missing|pending)|remaining work|what.s missing)\b/;
   // Resposta que admite trabalho em falta (porta de qualidade, «o que falta», pendente…).
   function hasPendingWork(m) {
     if (m.role !== 'assistant') return false;
+    var msgs = (state.currentChat || {}).messages || [];
+    if (msgs.indexOf(m) !== -1 && msgs.slice(msgs.indexOf(m) + 1).some(function(x){ return x.role === 'assistant'; })) return false; // só a última resposta
     var text = String(m.text || '').replace(/```[\s\S]*?```/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    return /porta de qualidade|o que falta|ainda nao (?:esta|foi|ficou)|por fazer|pendente|em falta|nao se pode dizer|not done yet|still (?:missing|pending)|remaining work|what.s missing/.test(text);
+    return PENDING_RE.test(text);
   }
 
   function hasImplementationSuggestion(m) {
