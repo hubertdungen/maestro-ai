@@ -6510,14 +6510,15 @@ function esc(s) {
       warn.hidden=!d.warning;
       if(!warn.__login||warn.__txt!==d.warning){ warn.__txt=d.warning; warn.__login=1; warn.textContent=d.warning||"";
         if(d.warning){ var b=document.createElement("button"); b.type="button"; b.className="ob-login"; b.textContent="Iniciar sessão aqui"; warn.appendChild(b);
-          b.onclick=function(e){ e.stopPropagation(); b.disabled=true; b.textContent="A preparar…";
+          function msg(t){ var m=warn.querySelector(".ob-login-m"); if(!m){ m=document.createElement("div"); m.className="ob-login-m"; warn.appendChild(m); } m.textContent="⚠️ "+t; }
+          b.onclick=function(e){ e.stopPropagation(); if(warn.querySelector(".ob-login-f")) warn.querySelector(".ob-login-f").remove(); b.disabled=true; b.textContent="A preparar…";
             claudeLogin("/api/claude-login/start",{}).then(function(r){ b.disabled=false; b.textContent="Iniciar sessão aqui";
-              if(!r.ok){ alert(r.error); return; } window.open(r.url,"_blank","noopener");
-              var f=document.createElement("div"); f.className="ob-login-f"; f.innerHTML='<small>1. Autoriza na página aberta. 2. Cola aqui o código que te der.</small><input placeholder="Código" autocomplete="off"><button type="button">Enviar</button><a href="'+r.url+'" target="_blank" rel="noopener">Abrir o link outra vez</a>';
+              if(!r.ok){ msg(r.error||"Falhou ao iniciar o login"); return; } window.open(r.url,"_blank","noopener");
+              var f=document.createElement("div"); f.className="ob-login-f"; f.innerHTML='<small>1. Autoriza na página aberta. 2. Cola aqui o código que te der.</small><input placeholder="Código" autocomplete="off"><button type="button">Enviar</button><a href="'+r.url+'" target="_blank" rel="noopener"><b>1. Abrir a página de autorização</b></a>';
               warn.appendChild(f); var i=f.querySelector("input"); i.focus();
               f.querySelector("button").onclick=function(ev){ ev.stopPropagation(); var bt=ev.target; bt.disabled=true; bt.textContent="A validar…";
                 claudeLogin("/api/claude-login/code",{code:i.value}).then(function(x){ bt.disabled=false; bt.textContent="Enviar";
-                  if(x.ok){ warn.textContent="✅ Sessão do Claude renovada"; warn.__txt=""; setTimeout(load,1500); } else alert(x.error); }); };
+                  if(x.ok){ warn.textContent="✅ Sessão do Claude renovada"; warn.__txt=""; setTimeout(load,1500); } else msg(x.error||"Código recusado"); }); };
             }); }; } }
       var key=JSON.stringify(d.thoughts.map(function(t){return t.ts;}));
       if(key===lastKey) return; lastKey=key;
