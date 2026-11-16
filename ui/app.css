@@ -2531,3 +2531,7 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 
 /* Strategy em repouso: só o botão 🧭 discreto, sem ocupar espaço; clicar abre */
 #stPanel.st-idle{opacity:1;visibility:visible;pointer-events:none}#stPanel.st-idle .st-toggle{pointer-events:auto;opacity:.45}#stPanel.st-idle .st-toggle:hover{opacity:1}
+
+/* Strategy seamless: faixa fixa (nunca reflui), painel ao lado do pedido e a seguir o scroll sem atraso */
+@media (min-width:1081px){body.st-open #paneChat{padding-right:392px!important}}
+#stPanel,#stPanel.st-switching{transition:opacity .2s ease!important}

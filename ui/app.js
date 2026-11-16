@@ -6239,21 +6239,11 @@ function esc(s) {
     panel.style.right = ((ir && ir.width > 8) ? window.innerWidth - ir.left + 10 : 10) + 'px';
     /* minimalista: só existe quando há um plano à vista (largo) ou plano no chat (gaveta); senão não ocupa nada */
     /* histerese: vazio/cheio só se aplica depois de se manter ~0,9 s; senão pisca a cada poll, scroll ou troca de pedido */
-    var idleWant = wide() ? (panel.classList.contains('st-away') || !current()) : !current();
-    var applyIdle = function(v){ panel.classList.toggle('st-idle', v); document.body.classList.toggle('st-none', v && wide()); };
-    if (!refresh.__applied) { refresh.__applied = true; applyIdle(idleWant); }
-    else if (idleWant === panel.classList.contains('st-idle')) { clearTimeout(refresh.__idleT); refresh.__idleT = 0; }
-    else if (!refresh.__idleT || refresh.__idleWant !== idleWant) { clearTimeout(refresh.__idleT); refresh.__idleWant = idleWant; refresh.__idleT = setTimeout(function(){ refresh.__idleT = 0; applyIdle(refresh.__idleWant); refresh(); }, 900); }
+    var idleWant = wide() ? false : !current(); /* largo: o painel é sempre visível e a faixa fixa; só a gaveta estreita esvazia */
+    if (idleWant !== panel.classList.contains('st-idle')) panel.classList.toggle('st-idle', idleWant);
     var idle = panel.classList.contains('st-idle');
     var open = isOpen() && (!idle || !!panel.__peek); panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
     document.body.classList.toggle('st-open', open && wide());
-    var pane = document.getElementById('paneChat');
-    /* 40px do #stToggle (left:-40px) + 2 de folga */
-    var reserve = open && wide() && pane ? Math.max(0, pane.getBoundingClientRect().right - panel.getBoundingClientRect().left + 42) : 0;
-    /* a faixa só muda quando o valor se mantém ~0,6 s: sem reflow em cadeia ao saltar de chat */
-    var scR = document.getElementById('chatScroll'), cur = parseFloat(document.body.style.getPropertyValue('--st-w')) || 0;
-    if (Math.abs(reserve - cur) < 1 || (scR && scR.__restoring)) { clearTimeout(refresh.__t); refresh.__t = 0; }
-    else if (!refresh.__t || refresh.__want !== reserve) { clearTimeout(refresh.__t); refresh.__want = reserve; refresh.__t = setTimeout(function(){ refresh.__t = 0; document.body.style.setProperty('--st-w', refresh.__want + 'px'); window.dispatchEvent(new Event('strategyvisibilitychange')); }, cur === 0 && reserve > 0 ? 0 : 600); }
     panel.setAttribute('aria-label', ui('Estratégia do pedido','Request strategy'));
     var toggle = panel.querySelector('#stToggle');
     toggle.setAttribute('aria-expanded', String(open));
@@ -6293,7 +6283,7 @@ function esc(s) {
     panel.addEventListener('keydown',function(ev){ if(ev.key === 'Escape'){ ev.preventDefault(); close(); } });
     if (window.ResizeObserver){ new ResizeObserver(function(){ refresh(); }).observe(document.getElementById('paneChat')); }
     panel.querySelector('#stToggle').onclick = function(){ if (panel.classList.contains('st-idle')){ panel.__peek = !panel.__peek; setOpen(true); } else setOpen(!isOpen()); sig = ''; refresh(); };
-    var sc = document.getElementById('chatScroll'); if (sc) sc.addEventListener('scroll', followScroll, {passive:true});
+    var sc = document.getElementById('chatScroll'); if (sc) var raf=0; sc.addEventListener('scroll', function(){ if(!raf) raf=requestAnimationFrame(function(){ raf=0; followScroll(); }); }, {passive:true});
     window.addEventListener('resize', function(){ sig = ''; refresh(); });
     setInterval(function(){ if (!document.hidden){ if (wide()) followScroll(); refresh(); } }, 1500);
     if (wide()) followScroll(); refresh();
