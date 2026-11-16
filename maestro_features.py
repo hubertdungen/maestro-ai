@@ -541,10 +541,12 @@ def generate_ai_image(prompt: str, aspect: str = "1:1") -> dict:
     fname = f"maestro-img-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:5]}.png"
     fpath = GALLERY_DIR / fname
 
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "MaestroAI-Studio/2.0"})
-        with urllib.request.urlopen(req, timeout=35) as r:
-            img_bytes = r.read()
+    # Pollinations (grátis): 1 imagem / 45 s por IP, responde 402 "Retry after Ns". Espera e repete uma vez.
+    for attempt in (1, 2):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "MaestroAI-Studio/2.0"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                img_bytes = r.read()
             if len(img_bytes) > 1024:
                 fpath.write_bytes(img_bytes)
                 # Também copia para PASTES_DIR para poder ser anexada diretamente a agentes CLI
@@ -552,13 +554,17 @@ def generate_ai_image(prompt: str, aspect: str = "1:1") -> dict:
                 meta = {"name": fname, "path": str(fpath), "kind": "ai_image", "prompt": prompt, "created_at": time.time()}
                 _record_gallery_meta(meta)
                 return meta
-    except Exception:
-        pass
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (402, 429) or attempt == 2:
+                break
+            m = re.search(r"after (\d+)s", exc.read().decode("utf-8", "replace"))
+            time.sleep(min(int(m.group(1)) + 1 if m else 46, 50))
+        except Exception:
+            break
 
     # Fallback local: renderizar arte vetorial SVG/PNG de alta qualidade
-    import build_windows_exe as B
-    png_bytes = B.render_maestro_png(512)
-    fpath.write_bytes(png_bytes)
+    fpath.write_bytes((pathlib.Path(__file__).with_name("icons") / "icon-512.png").read_bytes())
     meta = {"name": fname, "path": str(fpath), "kind": "ai_image", "prompt": prompt + " (Procedural)", "created_at": time.time(), "fallback": True}
     _record_gallery_meta(meta)
     return meta

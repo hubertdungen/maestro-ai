@@ -2750,7 +2750,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(200, F.delete_gallery_item(str(body.get("path") or "")))
 
         if u.path == "/api/media/generate-image":
-            return self._reply(200, F.generate_ai_image(str(body.get("prompt") or "Maestro AI"), str(body.get("aspect") or "1:1")))
+            try:
+                return self._reply(200, F.generate_ai_image(str(body.get("prompt") or "Maestro AI"), str(body.get("aspect") or "1:1")))
+            except Exception:
+                return self._reply(200, {"error": "O serviço de imagens falhou. Tenta novamente dentro de instantes."})
 
         if u.path == "/api/media/generate-gif":
             try:
