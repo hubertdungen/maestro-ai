@@ -272,9 +272,28 @@ button.brand-bar > span { min-width: 0; }
 .rich-table td {
   padding: 7px 11px; border-bottom: 1px solid var(--line); color: var(--text);
 }
+/* As colunas curtas (#, gravidade, ficheiro) medem-se pela palavra inteira: o texto do balão usa
+   overflow-wrap:anywhere e, herdado aqui, deixava-as com um carácter de largura («Médi-a», «lib/inbo-x.js»). */
+.rich-table th { white-space: nowrap; }
+.rich-table th, .rich-table td { overflow-wrap: break-word; word-break: normal; vertical-align: top; }
+.rich-table td code { overflow-wrap: break-word; word-break: normal; }
 .rich-table tr:last-child td { border-bottom: 0; }
 .rich-table tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
 
+/* Telemóvel: uma tabela de 4 colunas não cabe em 390 px. Cada linha passa a cartão, com o nome da coluna antes do valor. */
+@media (max-width: 600px) {
+  #chatScroll .rich-table thead { display: none; }
+  #chatScroll .rich-table, #chatScroll .rich-table tbody, #chatScroll .rich-table tr, #chatScroll .rich-table td { display: block; width: 100%; }
+  #chatScroll .rich-table tr { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  #chatScroll .rich-table tr:last-child { border-bottom: 0; }
+  #chatScroll .rich-table td { border: 0; padding: 2px 0; background: none !important; }
+  #chatScroll .rich-table td::before {
+    content: attr(data-l) " · "; color: var(--cyan); font-family: var(--mono);
+    font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  #chatScroll .rich-table td[data-l=""]::before, #chatScroll .rich-table td:not([data-l])::before { content: ""; }
+  #chatScroll .rich-table td code { overflow-wrap: anywhere; }
+}
 @container (max-width: 470px) {
   .rich-table-wrap { border-radius: 10px; }
   .rich-table thead { display: none; }
@@ -768,8 +787,10 @@ html[data-world="dungen"] .bubble { border-radius: 3px; }
   /* JS owns following/restoration; native anchoring fights live updates. */
   overflow-anchor: none;
   /* Feather the clipping edge above the composer; keep the final line above it. */
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent 100%);
+  /* Em cima também: o texto entra por baixo do cabeçalho a esbater, em vez de ser cortado a direito.
+     Os 18 px ficam dentro do padding do topo, por isso a primeira mensagem nunca perde nada. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 36px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 36px), transparent 100%);
 }
 /* Botão flutuante «Ir para o fim» — aparece quando o Hubert faz scroll para cima */
 .jump-end-btn {
@@ -2572,10 +2593,17 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .orch-brain.busy .ob-dots i{animation:obDot 1.2s infinite}
 .ob-dots i:nth-child(2){animation-delay:.2s!important}.ob-dots i:nth-child(3){animation-delay:.4s!important}
 .ob-pop{position:absolute;right:0;bottom:calc(100% + 10px);z-index:60;width:min(268px,calc(100vw - 24px));max-height:min(52vh,360px);overflow:auto;padding:10px;border-radius:12px;background:rgba(20,10,16,.97);border:1px solid rgba(255,255,255,.12);box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transform:translateY(6px) scale(.97);pointer-events:none;transition:opacity .2s,transform .2s}
-.orch-brain:hover .ob-pop,.orch-brain:focus .ob-pop,.orch-brain:focus-within .ob-pop{opacity:1;transform:none;pointer-events:auto}
+.orch-brain.open .ob-pop{opacity:1;transform:none;pointer-events:auto}
+/* A caixa vive dentro de um botão da barra: repõe o texto normal (sem isto herdava nowrap e ganhava scroll lateral). */
+.orch-brain{cursor:pointer}
+.orch-brain .ob-pop{white-space:normal;text-align:left;font-weight:400;letter-spacing:0;text-transform:none;color:var(--text,#e5e7eb);cursor:default;overflow-x:hidden;overflow-wrap:anywhere;display:block}
+.orch-brain.open{border-color:var(--cyan,#4cf)}
+.orch-brain.warn::after{content:"";position:absolute;top:5px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--amber,#f59e0b);box-shadow:0 0 6px var(--amber,#f59e0b)}
+.ob-warn{font-size:11.5px;line-height:1.35;margin-bottom:8px;padding:7px 9px;border-radius:9px;border:1px solid color-mix(in srgb,var(--amber,#f59e0b) 45%,transparent);background:color-mix(in srgb,var(--amber,#f59e0b) 12%,transparent);color:var(--text,#e5e7eb)}
+.ob-th>span:last-child{min-width:0;flex:1}
 .ob-now{font-size:12px;opacity:.75;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}
 .ob-th{display:flex;gap:8px;padding:5px 0;font-size:11px;line-height:1.3;animation:obIn .4s both}
-.ob-th b{font-weight:600;display:block;opacity:.9}.ob-th small{opacity:.55;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:210px}
+.ob-th b{font-weight:600;display:block;opacity:.9}.ob-th small{opacity:.6;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .ob-th .t{font-size:14px}
 @keyframes obIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
 @keyframes obPulse{50%{transform:scale(1.18);filter:drop-shadow(0 0 6px var(--cyan,#4cf))}}
