@@ -22,7 +22,7 @@ class QualityGateTests(unittest.TestCase):
             return reply if isinstance(reply, dict) else dict(text=reply, rc=0, agent_used='Motor · maker', tools=['t'], plan={})
 
         job = dict(status='running', t0=time.time(), steps=[])
-        with patch.object(web.TURN_QUEUE, 'update') as update:
+        with patch.object(web.TURN_QUEUE, 'update') as update, patch.object(web.QAGATE, '_home_repos', return_value=[]):
             result = web.quality_gate(dict(text=first, rc=0, agent_used='Maestro · revisor', tools=[], plan=dict(plan or {})),
                                       'sonnet', 'PROMPT', 'pedido', '/tmp', [], dict(plan or {}), 'nas', job, 'turn', run=run)
         self.updates = update.call_args_list

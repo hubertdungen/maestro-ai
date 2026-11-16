@@ -37,13 +37,18 @@ _ASK = (r'diz[- ]?me\s+(?:onde|qual|se|como|quando)', r'queres que\b', r'quer qu
 _UNSEEN = (r'(?:faz|fa[cç]a|carrega|prime|pressiona|experimenta|usa)\w*[^.\n]{0,40}ctrl\s*\+\s*(?:shift\s*\+\s*)?(?:f5|r)\b',
            r'limpa\w* (?:a |o )?cache',
            r'n[aã]o (?:vi|verifiquei|confirmei|testei|abri)\b[^.\n]{0,60}(?:browser|navegador|renderizad\w*)')
+# Saying it out loud does not make it delivered.
+_GIT = (r'n[aã]o fiz (?:o |nenhum )?(?:commit|push|pr\b|merge|deploy)', r'\bpor commitar\b', r'\bsem (?:commit|push)\b',
+        r'(?:fic(?:a|ou|aram)|deixei)\s+(?:\w+\s+){0,2}(?:por|sem)\s+(?:commit\w*|enviar|publicar|integrar)')
+_KEEP_LOCAL = r'(?:n[aã]o|sem)\s+(?:\w+\s+){0,3}(?:commit\w*|push|merge|publi\w+)'
 _OK = re.compile(r'(?:nada|nenhum[ao]?|sem|zero|0)\s+(?:\w+\s+)?(?:pendente|must-?fix|lacuna|bloqueio)\w*', re.I)
 
 
-def check(text):
+def check(text, request=''):
     """Return a list of matched reasons (empty = acceptable to deliver)."""
     t = _OK.sub('', str(text or ''))
-    hits = [p for p in _NEG + _UNSEEN if re.search(p, t, re.I | re.M)]
+    git = () if re.search(_KEEP_LOCAL, request or '', re.I) else _GIT  # the user asked for it to stay local
+    hits = [p for p in _NEG + _UNSEEN + git if re.search(p, t, re.I | re.M)]
     tail = t[-600:]  # permission questions only matter where the reply ends
     hits += [p for p in _ASK if re.search(p, tail, re.I | re.S)]
     return hits
@@ -64,6 +69,21 @@ _SOURCE = {'.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.css', '.scss',
            '.cs', '.vue', '.svelte', '.sql', '.go', '.rs', '.php', '.lua'}
 
 
+_HOME_REPOS = {'at': 0.0, 'roots': []}
+
+
+def _home_repos():
+    """Git repositories one or two levels below the home folder (cached 10 minutes; a cheap glob on ext4)."""
+    if time.time() - _HOME_REPOS['at'] > 600:
+        home = pathlib.Path.home()
+        try:
+            found = [p.parent for pattern in ('*/.git', '*/*/.git') for p in home.glob(pattern)]
+        except OSError:
+            found = []
+        _HOME_REPOS.update(at=time.time(), roots=sorted(set(found)))
+    return list(_HOME_REPOS['roots'])
+
+
 def _git(root, *args):
     return subprocess.run(['git', '-C', str(root)] + list(args), capture_output=True, text=True, timeout=15)
 
@@ -74,9 +94,10 @@ def repo_findings(text, cwd, since, request=''):
     Repositories are the project folder plus every path the reply mentions. Only changes made
     after ``since`` count, so work in progress that was already there is never blamed on the turn.
     """
-    if re.search(r'(?:n[aã]o|sem)\s+(?:\w+\s+){0,3}(?:commit\w*|push|merge|publi\w+)', request or '', re.I):
+    if re.search(_KEEP_LOCAL, request or '', re.I):
         return []  # the user asked for it to stay local
     roots = []
+    mentioned = None
     for raw in [str(cwd or '')] + re.findall(r'(?<![\w:/.])(?:~|/[\w.@+-]+)(?:/[\w.@+-]+)+', str(text or '')):
         path = pathlib.Path(os.path.expanduser(raw.rstrip('.,;:)`')))
         try:
@@ -86,8 +107,12 @@ def repo_findings(text, cwd, since, request=''):
                 roots.append(path)
         except OSError:
             continue
+    # Replies often name files relative to a repository they never spell out ("ui/app.css"): look in the
+    # home repositories too, but there only blame files the reply itself names.
+    mentioned = len(roots)
+    roots += [r for r in _home_repos() if r not in roots]
     found = []
-    for root in roots[:6]:
+    for index, root in enumerate(roots[:60]):
         try:
             status = _git(root, 'status', '--porcelain')
             if status.returncode:
@@ -97,6 +122,8 @@ def repo_findings(text, cwd, since, request=''):
                 name = line[3:].split(' -> ')[-1].strip().strip('"')
                 if pathlib.Path(name).suffix.lower() not in _SOURCE:
                     continue  # databases, logs and app state change by themselves while a service runs
+                if index >= mentioned and not re.search(r'(?<![\w/.-])' + re.escape(name) + r'(?![\w/-])', str(text or '')):
+                    continue
                 try:
                     if (root / name).stat().st_mtime >= since:
                         dirty.append(name)
@@ -104,7 +131,7 @@ def repo_findings(text, cwd, since, request=''):
                     pass  # deleted or unreadable: cannot be dated, never blamed
             stamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(since))
             ahead = _git(root, 'log', '@{u}..HEAD', '--since=' + stamp, '--oneline')
-            unpushed = ahead.stdout.splitlines() if ahead.returncode == 0 else []  # no upstream: local-only repo
+            unpushed = ahead.stdout.splitlines() if ahead.returncode == 0 and index < mentioned else []  # no upstream: local-only repo
         except (OSError, subprocess.SubprocessError):
             continue
         parts = []

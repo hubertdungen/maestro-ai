@@ -45,6 +45,7 @@ An orchestrator is only useful if what comes back is finished. Three mechanisms 
 | **Strategy panel** | Beside the chat: the orchestrator's reasoning, the agent graph, per-node status, engine/model used and a decision timeline. Follows the request you are reading; with none in view it shows the latest or live plan. |
 | **Quota budgets** | Weekly quotas split into daily budgets; DeepSeek has a per-cycle money budget with a daily bar and yellow/red lines for justified extra use. |
 | **Read-only scouts and reviewers** | A restricted DeepSeek API mode that can only list folders, read excerpts and grep inside the project; Claude reviewers get inspection-only shell (`git status/diff/log/show` and the page checker). |
+| **Conversation-aware routing** | A follow-up inherits the domain and level of the work it continues; when you say the last attempt failed, the next one goes to a single stronger engine. |
 | **Real parallelism** | Requests on different apps run at the same time on different subscriptions; a cheap Sentinel decides independence, and same-plan writers stay exclusive. |
 | **Web studio** | Chats and folders with archive, request queue, live quota and fleet panels, six visual worlds, PT/EN UI, installable PWA for desktop, tablet and phone. |
 | **Interactive answers** | Replies can render inline HTML, tables, charts and step-by-step Q&A cards per platform. |

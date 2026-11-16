@@ -37,6 +37,10 @@ class RepoStateTests(unittest.TestCase):
         past = time.time() - 3600
         os.utime(self.repo / 'wip.txt', (past, past))
         self.since = time.time() - 60
+        # Never look at the real home folder from a test.
+        scan = patch.object(G, '_home_repos', return_value=[])
+        scan.start()
+        self.addCleanup(scan.stop)
 
     def test_clean_delivery_and_previous_wip_are_not_blamed(self):
         self.assertEqual(G.repo_findings('Feito em ' + str(self.repo), '/tmp', self.since), [])
@@ -56,6 +60,16 @@ class RepoStateTests(unittest.TestCase):
         self.assertIn('por enviar', found[0])
         git(self.repo, 'push', '-q')
         self.assertEqual(G.repo_findings('Feito.', str(self.repo), self.since), [])
+
+    def test_repository_named_only_by_a_relative_file_is_found_and_others_are_not_blamed(self):
+        (self.repo / 'novo.py').write_text('x = 1')
+        (self.repo / 'outro.py').write_text('y = 2')        # someone else's work in the same repository
+        with patch.object(G, '_home_repos', return_value=[self.repo]):
+            found = G.repo_findings('Ficheiros: `novo.py`, servido do disco.', '/tmp', self.since)
+            self.assertEqual(len(found), 1)
+            self.assertIn('novo.py', found[0])
+            self.assertNotIn('outro.py', found[0])
+            self.assertEqual(G.repo_findings('Mudei a cor do botão.', '/tmp', self.since), [])
 
     def test_request_to_keep_it_local_is_respected(self):
         (self.repo / 'novo.py').write_text('x = 1')

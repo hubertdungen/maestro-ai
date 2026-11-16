@@ -96,7 +96,7 @@ class IntegrationTests(unittest.TestCase):
         p=patch.object(W,'ensure_all_dirs');p.start();self.addCleanup(p.stop)
         p=patch.object(W,'get_folder_map', return_value={'nas':{'name':'NAS','cwd':str(self.root)}});p.start();self.addCleanup(p.stop)
         W.save_chat(dict(id='chat', project='nas', engine='auto', messages=[]))
-        self.classify=patch.object(W.M,'classify_task',side_effect=lambda *args:plan());self.classify.start();self.addCleanup(self.classify.stop)
+        self.classify=patch.object(W.M,'classify_task',side_effect=lambda *args, **kwargs:plan());self.classify.start();self.addCleanup(self.classify.stop)
 
     def enqueue(self,text,**kw):
         return W.enqueue_turn(dict(id='chat', text=text, project='nas', engine='auto', **kw))

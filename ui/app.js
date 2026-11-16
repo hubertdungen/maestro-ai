@@ -2089,6 +2089,8 @@ function esc(s) {
       else if ((Date.now() - (box.__userIntentAt || 0)) < 1500) box.__follow = false;
     }
     updateJumpEndBtn();
+    /* A chegar ao topo da janela: traz as mensagens anteriores antes de se ver o fim. */
+    if (_winFrom > 0 && box.scrollTop < 900 && !box.__restoring && !box.__settling) loadOlderTurns();
   }
 
   function updateJumpEndBtn() {
@@ -2179,6 +2181,35 @@ function esc(s) {
     updateJumpEndBtn();
   }
 
+  /* Janela de mensagens: uma conversa longa abre só com as últimas; as anteriores continuam
+     guardadas e entram no ecrã ao subir (ou pelo botão no topo). Nada é eliminado. */
+  var CHAT_WINDOW = 60, CHAT_WINDOW_STEP = 40;
+  var _winFrom = 0, _olderEl = null, _loadingOlder = false;
+
+  function chatWindowStart(c) {
+    var n = c.messages.length, from = Math.max(0, n - CHAT_WINDOW);
+    /* Pedidos que ainda esperam por ti têm de estar no ecrã para a seta os encontrar. */
+    var pending = bulkMsgs();
+    if (pending.length) {
+      var first = c.messages.indexOf(pending[0]);
+      if (first >= 0) from = Math.max(Math.max(0, n - 240), Math.min(from, first));
+    }
+    return from;
+  }
+
+  function loadOlderTurns(count) {
+    var box = chatScrollBox();
+    if (!box || _winFrom <= 0 || _loadingOlder) return false;
+    _loadingOlder = true;
+    var h = box.scrollHeight, t = box.scrollTop, follow = box.__follow !== false;
+    _winFrom = Math.max(0, _winFrom - (count || CHAT_WINDOW_STEP));
+    renderMessages();
+    /* O que entra por cima não pode mexer no que estás a ler. */
+    if (!follow) box.scrollTop = t + (box.scrollHeight - h);
+    _loadingOlder = false;
+    return true;
+  }
+
   function renderMessages() {
     var box = document.getElementById("chatScroll");
     var c = state.currentChat;
@@ -2256,7 +2287,10 @@ function esc(s) {
       box.innerHTML = "";
       _turnCache = {};
       _liveEl = null;
+      _olderEl = null;
+      _winFrom = chatWindowStart(c);
     }
+    if (_winFrom >= c.messages.length) _winFrom = Math.max(0, c.messages.length - CHAT_WINDOW);
 
     var prevTop = box.scrollTop;
     /* Segue apenas se já estava a seguir. A posição a 160 px do fundo deixou
@@ -2268,6 +2302,7 @@ function esc(s) {
 
     // 1) Upsert: cria só turnos novos ou cujo conteúdo mudou.
     msgs.forEach(function(m, idx){
+      if (idx < _winFrom) return;
       if (m.role === 'user' && state.messageQueue.some(function(t){ return t.id === m.turn_id && !t.started_at; })) return;
       var sig = msgSig(m, idx);
       seen[idx] = 1;
@@ -2289,8 +2324,22 @@ function esc(s) {
       }
     });
 
+    if (_winFrom > 0) {
+      if (!_olderEl) {
+        _olderEl = document.createElement("button");
+        _olderEl.type = "button";
+        _olderEl.className = "older-turns";
+        _olderEl.onclick = function(){ noteChatIntent(); setChatFollow(false); loadOlderTurns(); };
+      }
+      _olderEl.textContent = ui("↑ Mensagens anteriores (" + _winFrom + ")", "↑ Earlier messages (" + _winFrom + ")");
+      if (box.firstChild !== _olderEl) box.insertBefore(_olderEl, box.firstChild);
+    } else if (_olderEl) {
+      if (_olderEl.parentNode) _olderEl.parentNode.removeChild(_olderEl);
+      _olderEl = null;
+    }
+
     // 3) Ordena movendo apenas os nós fora de sítio (nunca recria).
-    var prevNode = null;
+    var prevNode = (_olderEl && _olderEl.parentNode === box) ? _olderEl : null;
     msgs.forEach(function(_, idx){
       if (!_turnCache[idx]) return;
       var el = _turnCache[idx].el;
@@ -3304,6 +3353,13 @@ function esc(s) {
       box.__restoring = false;
       if (v && typeof v.top === "number") {
         box.__follow = false;
+        /* A posição guardada conta a partir do fim: assim vale com a janela parcial,
+           que cresce até cobrir o sítio onde estavas. */
+        var gap = typeof v.h === "number" ? v.h - v.top : null;
+        if (gap !== null) {
+          for (var guard = 0; _winFrom > 0 && box.scrollHeight < gap + 600 && guard < 12; guard++) loadOlderTurns(80);
+          v = { top: Math.max(0, box.scrollHeight - gap) };
+        }
         var maxTop = Math.max(0, box.scrollHeight - box.clientHeight);
         box.scrollTop = Math.min(v.top, maxTop);
       } else {
