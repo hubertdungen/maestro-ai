@@ -307,6 +307,19 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual([t['text'] for t in pend][:2], ['virar', 'B'])
         self.assertTrue(pend[0]['force'] and pend[0]['steer'])
 
+    def test_steer_keeps_interrupted_strategy_on_original_request(self):
+        workflow = {'turn_id': 'before', 'status': 'running', 'nodes': [
+            {'id': 'a', 'status': 'done'}, {'id': 'b', 'status': 'running'}]}
+        W.save_chat(dict(id='chat', messages=[{'role': 'user', 'turn_id': 'before', 'text': 'Build'}]))
+        snapshot = dict(task_id='before', plan=plan(), workflow=workflow)
+        with patch.object(W, 'get_job_snapshot', return_value=snapshot), patch.object(W, 'stop_chat_job'):
+            W.steer_prepare({'id': 'chat', 'text': 'Change'})
+        saved = W.load_chat('chat')['messages'][0]['plan']
+        self.assertEqual(saved['status'], 'interrupted')
+        self.assertEqual([n['status'] for n in saved['workflow']['nodes']], ['done', 'interrupted'])
+        self.assertEqual(workflow['nodes'][1]['status'], 'running')  # no mutation of live state
+        self.assertEqual(saved['exec_engine'], 'codex')
+
     def test_failed_turn_retry_replaces_error_response(self):
         with patch.object(W,'execute_agent_turn',side_effect=RuntimeError('fixture')):
             self.enqueue('A');W.schedule_turns_once();self.wait_done()
