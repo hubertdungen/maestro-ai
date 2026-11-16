@@ -1236,9 +1236,11 @@ function esc(s) {
           rows.push(mdCells(lines[i]));
           i++;
         }
-        var thead = headers.map(function(h){ return '<th>' + mdInline(h) + '</th>'; }).join("");
+        /* Numa célula não há parágrafos: os modelos escrevem <br> para mudar de linha, e isso é para cumprir. */
+        var cell = function(text){ return mdInline(text).replace(/&lt;br\s*\/?&gt;/gi, '<br>'); };
+        var thead = headers.map(function(h){ return '<th>' + cell(h) + '</th>'; }).join("");
         var tbody = rows.map(function(r){
-          return '<tr>' + headers.map(function(_, ci){ return '<td>' + mdInline(r[ci] || "") + '</td>'; }).join("") + '</tr>';
+          return '<tr>' + headers.map(function(h, ci){ return '<td data-l="' + esc(String(h).replace(/[*`_]/g, "")) + '">' + cell(r[ci] || "") + '</td>'; }).join("") + '</tr>';
         }).join("");
         out.push('<div class="rich-table-wrap"><table class="rich-table"><thead><tr>' + thead + '</tr></thead><tbody>' + tbody + '</tbody></table></div>');
         continue;
@@ -6384,8 +6386,15 @@ function esc(s) {
   /* sem plano neste chat, ou nenhum plano à vista: o painel (e o 🧭) não aparecem */
   function hideIfNone(){ if (!panel) return; var none = !current() || (wide() && !activeEl); panel.classList.toggle('st-none', none); }
   // Prende o painel à posição do pedido: acompanha-o ao scroll e fica no topo quando ele sobe.
+  /* O que sai por baixo do chat esbate-se, como as mensagens, em vez de acabar num corte seco. */
+  function feather(cut){
+    var main = panel && panel.querySelector('.st-main'); if (!main) return;
+    var m = cut > 0 ? 'linear-gradient(to bottom, #000 calc(100% - ' + (cut + 40) + 'px), transparent calc(100% - ' + cut + 'px))' : '';
+    if (main.__mask === m) return;
+    main.__mask = m; main.style.webkitMaskImage = m; main.style.maskImage = m;
+  }
   function place(){
-    if (!panel || !activeEl || !isOpen() || !wide()) return;
+    if (!panel || !activeEl || !isOpen() || !wide()) { feather(0); return; }
     document.querySelectorAll('.st-linked').forEach(function(x){ if (x !== activeEl) x.classList.remove('st-linked'); });
     activeEl.classList.add('st-linked');
     /* preso ao pedido: sobe/desce com ele (sem limite), cortado pelas bordas visíveis do chat */
@@ -6394,6 +6403,7 @@ function esc(s) {
     var top = Math.min(Math.max(r.top, vr.top + 8), Math.max(vr.top + 8, r.bottom - h));
     panel.style.bottom = 'auto'; panel.style.top = top + 'px';
     panel.style.clipPath = 'inset(0 -60px ' + Math.max(0, top + h - vr.bottom) + 'px -60px)';
+    feather(Math.max(0, top + h - vr.bottom));
   }
   /* Com a Estratégia aberta, a coluna de leitura não fica abaixo de READ_MIN: o painel direito cede o
      lugar e volta quando a Estratégia fecha. Se o reabrires à mão, fica como quiseres até fechares a Estratégia. */
