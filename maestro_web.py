@@ -2912,7 +2912,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path in ("/api/claude-login/start", "/api/claude-login/code"):
             if self.headers.get("X-Maestro-Action") != "1" or self.headers.get("Sec-Fetch-Site") == "cross-site":
                 return self._reply(403, {"error": "Pedido fora da aplicação"})
-            return self._reply(200, CLOGIN.start() if u.path.endswith("start") else CLOGIN.submit(body.get("code")))
+            who = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip() + " · " + (self.headers.get("User-Agent") or "")[:70]
+            return self._reply(200, CLOGIN.start(who) if u.path.endswith("start") else CLOGIN.submit(body.get("code"), who))
         if u.path == "/api/queue/policy":
             if body.get("policy") in Q.POLICIES:
                 POLICY_PATH.write_text(json.dumps({"policy": body["policy"]}))

@@ -33,7 +33,22 @@ def _read(fd: int, secs: float) -> str:
     return out.decode(errors="replace")
 
 
-def start() -> dict:
+def _log(event: str, who: str = "") -> None:
+    """One line per attempt: when a button "does nothing", this tells whether the click reached the server."""
+    try:
+        with (M.STATE_DIR / "claude-login.log").open("a") as fh:
+            fh.write(time.strftime("%Y-%m-%d %H:%M:%S") + " " + event + (" · " + who if who else "") + "\n")
+    except OSError:
+        pass
+
+
+def start(who: str = "") -> dict:
+    result = _start()
+    _log("início: " + ("link devolvido" if result.get("ok") else "FALHOU: " + str(result.get("error"))), who)
+    return result
+
+
+def _start() -> dict:
     with _LOCK:
         stop()
         fd, slave = pty.openpty()
@@ -65,7 +80,13 @@ def stop() -> None:
             pass
 
 
-def submit(code: str) -> dict:
+def submit(code: str, who: str = "") -> dict:
+    result = _submit(code)
+    _log("código: " + ("aceite" if result.get("ok") else "RECUSADO: " + str(result.get("error"))[:120]), who)
+    return result
+
+
+def _submit(code: str) -> dict:
     code = (code or "").strip()
     with _LOCK:
         p, fd = _S.get("proc"), _S.get("fd")
