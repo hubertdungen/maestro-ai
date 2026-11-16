@@ -28,7 +28,12 @@ class BudgetTests(unittest.TestCase):
             now = dt.datetime.fromisoformat(date).replace(tzinfo=B.TZ)
             s = B.status(self.path, now)
             self.assertEqual((s['cycle_start'],s['reset_at']),(start,end))
-            self.assertAlmostEqual(s['daily_eur'],15/days,places=6)
+            if date[-2:]=='20': self.assertAlmostEqual(s['daily_eur'],15/days,places=6)  # elastic: flat only on day one
+
+    def test_unused_days_roll_into_today(self):
+        with B.ledger(self.path) as d: d['days'] = {'2026-11-20': .5}
+        s = B.status(self.path, dt.datetime(2026,11,25,12,tzinfo=B.TZ))
+        self.assertAlmostEqual(s['daily_eur'], 14.5/25, places=6)
 
     def test_settlement_and_persistence(self):
         self.request(lambda: {'usage': {'prompt_tokens': 10, 'completion_tokens': 20}})

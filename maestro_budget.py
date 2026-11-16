@@ -40,6 +40,13 @@ def cycle(now):
     return start, end
 
 
+def _daily(data, now):
+    # Elastic: what is left of the cycle (before today) spread over the days left, today included.
+    start, end = cycle(now)
+    before = sum(v for k, v in data['days'].items() if start.isoformat() <= k < min(end.isoformat(), now.date().isoformat()))
+    return max(0, CAP-before)/(end-now.date()).days
+
+
 @contextmanager
 def ledger(path=None):
     path = pathlib.Path(path or STATE)
@@ -57,7 +64,7 @@ def ledger(path=None):
 def _snapshot(data, now):
     start, end = cycle(now)
     spent = sum(v for k, v in data['days'].items() if start.isoformat() <= k < end.isoformat())
-    daily = CAP/(end-start).days
+    daily = _daily(data, now)
     today = data['days'].get(now.date().isoformat(), 0)
     return dict(cap_eur=CAP, daily_eur=round(daily, 6), spent_eur=round(spent, 6),
                 today_eur=round(today, 6), remaining_eur=round(max(0, CAP-spent), 6),
@@ -110,11 +117,11 @@ def request(payload, send, path=None, now=None, necessity='normal', reason='', r
         start, end = cycle(now)
         spent = sum(v for k, v in data['days'].items() if start.isoformat() <= k < end.isoformat())
         today = data['days'].get(day, 0)
-        limit = daily_limit(CAP/(end-start).days, necessity)
+        limit = daily_limit(snap['daily_eur'], necessity)
         if (reserved > CAP-spent or reserved > limit-today):
             raise RuntimeError('DeepSeek: orçamento diário/mensal insuficiente; aguarda reposição ou usa outro fornecedor')
         data['days'][day] = data['days'].get(day, 0)+reserved
-        if today+reserved > CAP/(end-start).days:
+        if today+reserved > snap['daily_eur']:
             data.setdefault('exceptions', []).append(dict(at=now.isoformat(), necessity=necessity,
                                                          reason=str(reason)[:600], reserved_eur=reserved))
     result = send()  # Exceptions retain reservation: server may have billed it.
