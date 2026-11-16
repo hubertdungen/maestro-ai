@@ -559,7 +559,7 @@ def generate_ai_image(prompt: str, aspect: str = "1:1") -> dict:
     import build_windows_exe as B
     png_bytes = B.render_maestro_png(512)
     fpath.write_bytes(png_bytes)
-    meta = {"name": fname, "path": str(fpath), "kind": "ai_image", "prompt": prompt + " (Procedural)", "created_at": time.time()}
+    meta = {"name": fname, "path": str(fpath), "kind": "ai_image", "prompt": prompt + " (Procedural)", "created_at": time.time(), "fallback": True}
     _record_gallery_meta(meta)
     return meta
 
