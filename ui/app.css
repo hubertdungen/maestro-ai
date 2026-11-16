@@ -2554,7 +2554,7 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .apply-seen{align-self:flex-start;margin:4px 0 0 6px;font-size:11px;opacity:.75}
 
 /* Orquestrador a pensar */
-.orch-brain{position:absolute;left:38px;top:40px;z-index:70;width:20px;height:20px;display:grid;place-items:center;border-radius:50%;cursor:default;background:rgba(20,10,16,.92);border:1px solid rgba(255,255,255,.18);outline:none}
+.orch-brain{position:absolute;right:14px;top:24px;z-index:70;width:20px;height:20px;display:grid;place-items:center;border-radius:50%;cursor:default;background:rgba(20,10,16,.92);border:1px solid rgba(255,255,255,.18);outline:none}
 .orch-brain .ob-ico{font-size:12px;line-height:1;opacity:.65;transition:opacity .3s}
 .orch-brain.busy .ob-ico{opacity:1;animation:obPulse 1.6s ease-in-out infinite}
 .orch-brain.busy{border-color:var(--cyan,#4cf);box-shadow:0 0 8px rgba(76,204,255,.45)}
@@ -2572,3 +2572,6 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 @keyframes obPulse{50%{transform:scale(1.18);filter:drop-shadow(0 0 6px var(--cyan,#4cf))}}
 @keyframes obDot{0%,100%{opacity:0;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
 @media (prefers-reduced-motion:reduce){.orch-brain *{animation:none!important}}
+
+.sidebar-left .brand-bar{padding-right:46px}
+.sidebar-left .brand-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

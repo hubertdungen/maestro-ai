@@ -2329,14 +2329,14 @@ MANIFEST_JSON = {
     "categories": ["productivity", "utilities"],
     "prefer_related_applications": False,
     "icons": [
-        {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-        {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-        {"src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        {"src": "/icons/icon-192.png?v=20261116", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+        {"src": "/icons/icon-512.png?v=20261116", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        {"src": "/icons/icon-maskable-512.png?v=20261116", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
     ],
 }
 
 SW_JS = r"""
-const CACHE = "maestro-shell-v7";
+const CACHE = "maestro-shell-v8";
 const PRECACHE = [
   "/", "/manifest.json", "/icon.svg",
   "/icons/icon-192.png", "/icons/icon-512.png",
