@@ -4004,8 +4004,6 @@ function esc(s) {
     /* Fila grande fecha-se sozinha (>3); a escolha manual do utilizador prevalece. */
     if (box.__userFold === undefined) box.classList.toggle('folded', state.messageQueue.length > 3);
     box.innerHTML = state.messageQueue.length ? '<button type="button" class="queue-strip-head queue-fold" aria-label="' + ui('Recolher/expandir fila', 'Fold/unfold queue') + '">' + dualIco('queue','📥') + ' <span>' + ui('FILA MAESTRO', 'MAESTRO QUEUE') + ' · ' + state.messageQueue.length + '</span><span class="queue-chev" aria-hidden="true">⌃</span></button>' +
-      '<label class="queue-policy" title="' + ui('Como o Maestro ordena os pedidos em espera (todos os chats). Dentro de cada chat mantém-se a ordem de chegada.', 'How Maestro orders waiting requests (all chats). Arrival order always holds inside a chat.') + '">' + ui('Ordem', 'Order') + ' <select>' +
-        [['fifo', ui('Por chegada', 'By arrival')], ['chat', ui('Um chat de cada vez', 'One chat at a time')], ['short', ui('Mais curtos primeiro', 'Shortest first')], ['auto', ui('Automática', 'Automatic')]].map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === (state.queuePolicy || 'fifo') ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
       state.messageQueue.map(function(item, idx){
         return '<div class="queue-item" data-qid="' + esc(item.id) + '" title="' + esc(queueTip(item, idx)) + '"><button type="button" class="queue-grip" aria-label="' + ui('Arrastar para reordenar. Teclas ↑ e ↓ para mover.', 'Drag to reorder. Use ↑ and ↓ to move.') + '" title="' + ui('Arrastar para reordenar · ↑ ↓', 'Drag to reorder · ↑ ↓') + '">⠿</button><span class="queue-item-txt"><b>#' + (idx+1) + '</b> ' + esc(item.text || ui("Anexo", "Attachment")) +
           ' <span class="request-status" data-status="' + (item.status === 'interrupted' ? 'interrupted' : 'waiting') + '">' + (item.status === 'interrupted' ? ui('interrompido', 'interrupted') : ui('em espera', 'waiting')) + '</span><br><small>' + esc(queueReason(item)) + '</small></span><div class="queue-item-acts">' +
@@ -4014,8 +4012,6 @@ function esc(s) {
           '<button type="button" class="qedit" data-qedit="' + esc(item.id) + '" aria-label="' + ui('Editar pedido', 'Edit request') + '" title="' + ui('Editar pedido', 'Edit request') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20H4v-8M15 4l5 5M8 16l2-6L18 2l4 4-8 8z"/></svg></button>' +
           '<button type="button" data-qcancel="' + esc(item.id) + '" aria-label="' + ui('Remover da fila', 'Remove from queue') + '">' + dualIco('close','✕') + '</button></div></div>';
       }).join('') : '';
-    var pol = box.querySelector('.queue-policy select');
-    if (pol) pol.onchange = function(){ state.queuePolicy = pol.value; api('/api/queue/policy', {policy: pol.value}); };
     var fold = box.querySelector('.queue-fold');
     if (fold) fold.onclick = function(){ box.__userFold = !box.classList.contains('folded'); box.classList.toggle('folded', box.__userFold); };
     function refreshQueue() {
@@ -5891,6 +5887,9 @@ function esc(s) {
       more.onclick=function(){closeComposerPanels(false);var b=document.getElementById('wfModelButton');if(b)b.click();};panel.appendChild(more);
     } else {
       [['queue',ui('Meter em fila','Queue message'),ui('Guarda o pedido; o Maestro agenda quando puder executar.','Saves the request; Maestro schedules it when execution is possible.')],['steer',ui('Orientar agora','Steer now'),ui('Envia instruções adicionais à tarefa em curso.','Sends additional instructions to the running task.')]].forEach(function(row){panel.appendChild(composerChoice(row[1],row[2],state.busyMode===row[0],function(){setBusyMode(row[0]);syncComposerControls();closeComposerPanels(true);}));});
+      var pl=document.createElement('label');pl.className='queue-policy';pl.title=ui('Como o Maestro ordena os pedidos em espera (todos os chats). Dentro de cada chat mantém-se a ordem de chegada.','How Maestro orders waiting requests (all chats). Arrival order always holds inside a chat.');
+      pl.innerHTML=ui('Ordem da fila','Queue order')+' <select>'+[['fifo',ui('Por chegada','By arrival')],['chat',ui('Um chat de cada vez','One chat at a time')],['short',ui('Mais curtos primeiro','Shortest first')],['auto',ui('Automática','Automatic')]].map(function(o){return '<option value="'+o[0]+'"'+(o[0]===(state.queuePolicy||'fifo')?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>';
+      var ps=pl.querySelector('select');ps.onchange=function(){state.queuePolicy=ps.value;api('/api/queue/policy',{policy:ps.value});};panel.appendChild(pl);
       var note=document.createElement('p');note.className='composer-panel-note';note.textContent=ui('Define a ação de envio enquanto o Maestro está ocupado. As permissões continuam a ser as da sessão real.','Sets the send action while Maestro is busy. Permissions remain those of the actual session.');panel.appendChild(note);
     }
   }
@@ -6215,7 +6214,10 @@ function esc(s) {
     var pane = document.getElementById('paneChat');
     /* 40px do #stToggle (left:-40px) + 2 de folga */
     var reserve = open && wide() && pane ? Math.max(0, pane.getBoundingClientRect().right - panel.getBoundingClientRect().left + 42) : 0;
-    document.body.style.setProperty('--st-w', reserve + 'px');
+    /* a faixa só muda quando o valor se mantém ~0,6 s: sem reflow em cadeia ao saltar de chat */
+    var scR = document.getElementById('chatScroll'), cur = parseFloat(document.body.style.getPropertyValue('--st-w')) || 0;
+    if (Math.abs(reserve - cur) < 1 || (scR && scR.__restoring)) { clearTimeout(refresh.__t); refresh.__t = 0; }
+    else if (!refresh.__t || refresh.__want !== reserve) { clearTimeout(refresh.__t); refresh.__want = reserve; refresh.__t = setTimeout(function(){ refresh.__t = 0; document.body.style.setProperty('--st-w', refresh.__want + 'px'); window.dispatchEvent(new Event('strategyvisibilitychange')); }, cur === 0 && reserve > 0 ? 0 : 600); }
     panel.setAttribute('aria-label', ui('Estratégia do pedido','Request strategy'));
     var toggle = panel.querySelector('#stToggle');
     toggle.setAttribute('aria-expanded', String(open));
