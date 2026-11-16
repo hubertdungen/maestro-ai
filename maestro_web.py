@@ -1832,6 +1832,12 @@ def enqueue_turn(body):
             body.update(engine=selected['engine'], effort=selected.get('effort'))
         body['images'] = M.extract_images(str(body.get('text') or ''), body.get('images') or [])
         task, added = TURN_QUEUE.add(body)
+        if added and body.get('steer_front'):
+            tasks = TURN_QUEUE.tasks
+            mine = next(t for t in tasks if t['id'] == task['id'])
+            first = next((i for i, t in enumerate(tasks) if t['chat_id'] == cid and t['status'] == 'queued' and t is not mine), None)
+            if first is not None:
+                tasks.remove(mine); tasks.insert(first, mine); TURN_QUEUE.save()
         if added:
             messages = chat.setdefault('messages', [])
             if not messages:
@@ -2176,6 +2182,25 @@ def start_quota_watcher():
     threading.Thread(target=loop, daemon=True, name='maestro-quota-watcher').start()
 
 
+def steer_prepare(body):
+    """Steer = stop what runs in this chat and queue the new guidance first, like any other turn.
+
+    It used to bypass the queue: the new job had no task, so it never got a reply and the stopped
+    task was lost. Now it is an ordinary task, forced and placed ahead of the chat's waiting ones.
+    """
+    cid = str(body.get("id") or "")
+    snap = get_job_snapshot(cid) or {}
+    with TURN_QUEUE.lock:
+        old = next((t for t in TURN_QUEUE.tasks if t['chat_id'] == cid and t['status'] == 'running'), None)
+    note = ""
+    if old or snap.get("steps"):
+        note = "\n[PEDIDO INTERROMPIDO]: " + str((old or {}).get("text") or "")[:1500]
+        if snap.get("steps"):
+            note += "\n[PASSOS JÁ EXECUTADOS NO TURNO ANTERIOR INTERROMPIDO]: " + " -> ".join(snap["steps"][-5:]) + "\n"
+    stop_chat_job(cid, reason="steer")
+    return dict(body, steer=True, force=True, steer_note=note, steer_front=True)
+
+
 def dispatch_turn(body):
     cid = str(body.get("id") or "")
     chat = load_chat(cid) or create_chat(body.get("project") or "nas", body.get("engine") or "auto")
@@ -2190,12 +2215,7 @@ def dispatch_turn(body):
     chat["project"] = proj_key
     chat["engine"] = eng_key
 
-    prev_steps_note = ""
-    if is_steer:
-        prev_snap = get_job_snapshot(chat["id"])
-        stop_chat_job(chat["id"], reason="steer")
-        if prev_snap and prev_snap.get("steps"):
-            prev_steps_note = "\n[PASSOS JÁ EXECUTADOS NO TURNO ANTERIOR INTERROMPIDO]: " + " -> ".join(prev_snap["steps"][-5:]) + "\n"
+    prev_steps_note = str(body.get("steer_note") or "") if is_steer else ""
 
     fmap = get_folder_map()
     cwd = (fmap.get(proj_key) or {}).get("cwd") or str(HOME)
@@ -2942,13 +2962,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(200, {"ok": True})
 
         if u.path == "/api/chat/send":
-            if not body.get("steer"):
-                try:
-                    return self._reply(200, enqueue_turn(body))
-                except ValueError as exc:
-                    return self._reply(400, {"error": str(exc)})
             try:
-                return self._reply(200, dispatch_turn(body))
+                if body.get("steer"):
+                    body = steer_prepare(body)
+                return self._reply(200, enqueue_turn(body))
             except ValueError as exc:
                 return self._reply(400, {"error": str(exc)})
 
