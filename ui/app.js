@@ -3995,7 +3995,7 @@ function esc(s) {
     if (box.__chatId !== cid) {
       box.__chatId = cid; box.__editing = null; box.__dragging = false; box.__queueSig = null;
     }
-    var sig = state.lang + "|" + state.messageQueue.map(function(item){
+    var sig = state.lang + "|" + (state.queuePolicy || "fifo") + "|" + state.messageQueue.map(function(item){
       return [item.id, item.status, item.reason, item.blocked_by, item.text, item.waiting_on, item.conflict, item.force].join("~");
     }).join("|");
     if (box.__queueSig === sig || box.__editing || box.__dragging || box.__saving) return;
@@ -4004,6 +4004,8 @@ function esc(s) {
     /* Fila grande fecha-se sozinha (>3); a escolha manual do utilizador prevalece. */
     if (box.__userFold === undefined) box.classList.toggle('folded', state.messageQueue.length > 3);
     box.innerHTML = state.messageQueue.length ? '<button type="button" class="queue-strip-head queue-fold" aria-label="' + ui('Recolher/expandir fila', 'Fold/unfold queue') + '">' + dualIco('queue','📥') + ' <span>' + ui('FILA MAESTRO', 'MAESTRO QUEUE') + ' · ' + state.messageQueue.length + '</span><span class="queue-chev" aria-hidden="true">⌃</span></button>' +
+      '<label class="queue-policy" title="' + ui('Como o Maestro ordena os pedidos em espera (todos os chats). Dentro de cada chat mantém-se a ordem de chegada.', 'How Maestro orders waiting requests (all chats). Arrival order always holds inside a chat.') + '">' + ui('Ordem', 'Order') + ' <select>' +
+        [['fifo', ui('Por chegada', 'By arrival')], ['chat', ui('Um chat de cada vez', 'One chat at a time')], ['short', ui('Mais curtos primeiro', 'Shortest first')], ['auto', ui('Automática', 'Automatic')]].map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === (state.queuePolicy || 'fifo') ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
       state.messageQueue.map(function(item, idx){
         return '<div class="queue-item" data-qid="' + esc(item.id) + '" title="' + esc(queueTip(item, idx)) + '"><button type="button" class="queue-grip" aria-label="' + ui('Arrastar para reordenar. Teclas ↑ e ↓ para mover.', 'Drag to reorder. Use ↑ and ↓ to move.') + '" title="' + ui('Arrastar para reordenar · ↑ ↓', 'Drag to reorder · ↑ ↓') + '">⠿</button><span class="queue-item-txt"><b>#' + (idx+1) + '</b> ' + esc(item.text || ui("Anexo", "Attachment")) +
           ' <span class="request-status" data-status="' + (item.status === 'interrupted' ? 'interrupted' : 'waiting') + '">' + (item.status === 'interrupted' ? ui('interrompido', 'interrupted') : ui('em espera', 'waiting')) + '</span><br><small>' + esc(queueReason(item)) + '</small></span><div class="queue-item-acts">' +
@@ -4012,6 +4014,8 @@ function esc(s) {
           '<button type="button" class="qedit" data-qedit="' + esc(item.id) + '" aria-label="' + ui('Editar pedido', 'Edit request') + '" title="' + ui('Editar pedido', 'Edit request') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20H4v-8M15 4l5 5M8 16l2-6L18 2l4 4-8 8z"/></svg></button>' +
           '<button type="button" data-qcancel="' + esc(item.id) + '" aria-label="' + ui('Remover da fila', 'Remove from queue') + '">' + dualIco('close','✕') + '</button></div></div>';
       }).join('') : '';
+    var pol = box.querySelector('.queue-policy select');
+    if (pol) pol.onchange = function(){ state.queuePolicy = pol.value; api('/api/queue/policy', {policy: pol.value}); };
     var fold = box.querySelector('.queue-fold');
     if (fold) fold.onclick = function(){ box.__userFold = !box.classList.contains('folded'); box.classList.toggle('folded', box.__userFold); };
     function refreshQueue() {
@@ -4114,6 +4118,7 @@ function esc(s) {
       if (res.activity_version < (versions[res.chat.id] || 0)) return false;
       versions[res.chat.id] = res.activity_version;
     }
+    if (res && res.queue_policy) state.queuePolicy = res.queue_policy;
     if (res && Array.isArray(res.queue)) { state.messageQueue = res.queue; renderQueueStrip(); }
     return true;
   }
@@ -4513,6 +4518,7 @@ function esc(s) {
 
   function showModernTip(target) {
     var tipText = resolveTipContent(target);
+    if (document.querySelector(".composer-popover:not([hidden]), .sel-menu")) tipText = "";  /* sem tooltip sob um menu aberto */
     if (!tipText) {
       hideModernTip();
       return;
@@ -4563,7 +4569,8 @@ function esc(s) {
   });
   document.addEventListener("keydown", function(e){ if (e.key === "Escape") hideModernTip(); });
   document.addEventListener("scroll", hideModernTip, true);
-  document.addEventListener("mousedown", hideModernTip);
+  document.addEventListener("mousedown", function(){ clearTimeout(tipTimer); hideModernTip(); });
+  document.addEventListener("click", function(){ clearTimeout(tipTimer); hideModernTip(); }, true);
 
   document.getElementById("btnCleanup").onclick = function(){
     api("/api/cleanup", {}).then(function(r){
