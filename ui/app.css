@@ -2518,7 +2518,7 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 @media (min-width:1081px){body.st-open .update-toast{width:min(920px,calc(100% - var(--st-w,0px) - 24px));margin-left:12px;margin-right:calc(var(--st-w,0px) + 12px);max-width:none}}
 
 #stPanel{transition:opacity .3s ease,top .4s cubic-bezier(.2,.8,.2,1)}#stPanel.st-idle{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .3s ease,visibility 0s .3s}
-@media (min-width:1081px){body.st-none #paneChat{padding-right:0}#paneChat{transition:padding-right .3s ease}}
+@media (min-width:1081px){body.st-none #paneChat{padding-right:0}}
 @media (prefers-reduced-motion:reduce){#stPanel,#paneChat{transition:none!important}}
 
 .queue-policy{display:flex;align-items:center;gap:6px;font:600 .66rem var(--mono);color:#94a3b8;margin:2px 0 4px}

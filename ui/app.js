@@ -6180,7 +6180,7 @@ function esc(s) {
     var mm = S.fromWorkflow(pick[1], pick[0]); mm.label = pick[3] || ''; mm.n = list.indexOf(pick) + 1; mm.total = list.length; return mm;
   }
   function followScroll(){
-    var sc = document.getElementById('chatScroll'); if (!sc) return;
+    var sc = document.getElementById('chatScroll'); if (!sc || sc.__restoring) return; /* a trocar de chat: sem reflows nem trocas de pedido a meio */
     var vr = sc.getBoundingClientRect(), mid = vr.top + vr.height * 0.5; var best = null, bd = 1e9, bestEl = null;
     var i = 0, total = 0;
     sc.querySelectorAll('.wf-panel, .live-workflow').forEach(function(el){
