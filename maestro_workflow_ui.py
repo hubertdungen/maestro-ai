@@ -58,6 +58,10 @@ CSS = r"""
 .wf-partial .wf-rich{max-height:11em;overflow:auto;opacity:.85;padding:8px 10px;border-radius:10px;background:var(--card,#182133)}
 .wf-think{padding:2px 0}.wf-think-now span:last-child{background:linear-gradient(90deg,var(--cyan,#38bdf8),var(--violet,#a78bfa));-webkit-background-clip:text;background-clip:text;color:transparent}
 @media(prefers-reduced-motion:reduce){.wf-subchat,.wf-subchat *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+.wf-chips{display:flex;flex-wrap:wrap;gap:8px}.wf-chip{min-height:38px;padding:7px 14px;border-radius:999px;border:1px solid #64748b55;background:var(--card,#182133);color:inherit;font:inherit;font-size:13px;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}.wf-chip:hover:not(:disabled){border-color:var(--accent,#ec4899);transform:translateY(-1px)}.wf-chip:active:not(:disabled){transform:scale(.96)}.wf-chip[aria-pressed=true]{background:var(--accent,#ec4899);border-color:var(--accent,#ec4899);color:#fff;font-weight:600}.wf-chip:disabled{opacity:.4;cursor:not-allowed}
+.wf-model-dialog input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;cursor:pointer;--p:0%}.wf-model-dialog input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--accent,#ec4899) var(--p),#64748b55 var(--p))}.wf-model-dialog input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:#64748b55}.wf-model-dialog input[type=range]::-moz-range-progress{height:6px;border-radius:3px;background:var(--accent,#ec4899)}.wf-model-dialog input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;margin-top:-8px;border-radius:50%;background:#fff;border:3px solid var(--accent,#ec4899);box-shadow:0 2px 8px #0008}.wf-model-dialog input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--accent,#ec4899)}.wf-model-dialog input[type=range]:disabled{opacity:.35;cursor:not-allowed}
+.wf-ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--muted,#94a3b8)}.wf-ticks span{cursor:pointer;padding:2px 0}.wf-ticks .on{color:var(--text,#fff);font-weight:700}.wf-effort-val{color:var(--accent,#ec4899);margin-left:6px}
+.wf-model-dialog>.wf-dialog-head button{border:0;border-radius:50%;width:34px;height:34px;min-width:34px;min-height:34px;padding:0;font-size:18px;line-height:1;background:var(--card,#182133);color:var(--muted,#94a3b8);cursor:pointer;transition:background .15s,color .15s,transform .15s}.wf-model-dialog>.wf-dialog-head button:hover{background:var(--card-hover,#192746);color:var(--text,#fff);transform:rotate(90deg)}
 @media(max-width:640px){.wf-panel{padding:11px}.wf-nodes{grid-template-columns:1fr}.wf-model-dialog{padding:16px}.wf-node-title{flex-wrap:wrap}}
 """
 
@@ -97,6 +101,29 @@ JS = r"""
     if (levels.indexOf(pref.effort)!==-1) effort.value=pref.effort;
     else if (entry && levels.indexOf(entry.default_effort)!==-1) effort.value=entry.default_effort;
     note.textContent=entry ? [entry.note || entry.availability_note || '', entry.source ? ui('Fonte: ','Source: ')+entry.source : ''].filter(Boolean).join(' · ') : ui('O Maestro escolhe o modelo segundo a tarefa, os motores disponíveis e as quotas.','Maestro chooses a model using the task, available engines and quotas.');
+    wfPaint();
+  }
+  function wfChips(host,sel,onPick){
+    host.replaceChildren();
+    Array.prototype.forEach.call(sel.options,function(o){
+      var b=document.createElement('button');b.type='button';b.className='wf-chip';b.textContent=o.textContent;b.disabled=o.disabled;
+      b.setAttribute('aria-pressed',String(o.value===sel.value));
+      b.onclick=function(){onPick(o.value);};host.appendChild(b);
+    });
+  }
+  function wfPaint(){
+    var E=document.getElementById('wfEngineSelect'),M=document.getElementById('wfModelSelect'),F=document.getElementById('wfEffortSelect');
+    if(!E||!M||!F||!document.getElementById('wfEngineChips'))return;
+    wfChips(document.getElementById('wfEngineChips'),E,function(v){E.value=v;E.dispatchEvent(new Event('change'));});
+    wfChips(document.getElementById('wfModelChips'),M,function(v){M.value=v;M.dispatchEvent(new Event('change'));});
+    var r=document.getElementById('wfEffortRange'),t=document.getElementById('wfEffortTicks'),val=document.getElementById('wfEffortVal');
+    var lv=Array.prototype.map.call(F.options,function(o){return o.value;}), real=!F.disabled && lv.length>0;
+    r.disabled=!real;r.max=Math.max(0,lv.length-1);r.value=Math.max(0,lv.indexOf(F.value));
+    t.replaceChildren();
+    if(real)lv.forEach(function(l,i){var s=document.createElement('span');s.textContent=l;s.className=i===+r.value?'on':'';s.onclick=function(){r.value=i;r.oninput();};t.appendChild(s);});
+    val.textContent=real?F.value:ui('Predefinido pelo motor','Engine default');
+    r.style.setProperty('--p',lv.length>1?(r.value/(lv.length-1)*100)+'%':'0%');
+    r.oninput=function(){F.value=lv[r.value];wfSaveModelPreference();wfPaint();};
   }
   function wfRefreshModelControls() {
     var model=document.getElementById('wfModelSelect'), engine=document.getElementById('wfEngineSelect');
@@ -117,9 +144,9 @@ JS = r"""
   function wfModelDialogMarkup() {
     return '<div class="wf-dialog-head"><h2 id="wfModelTitle">'+ui('Modelos e esforço','Models and effort')+'</h2><button type="button" id="wfModelClose" aria-label="'+ui('Fechar','Close')+'">×</button></div>'+
       '<p>'+ui('Escolhe um motor ou deixa o Maestro coordenar. O catálogo distingue a configuração do NAS do acesso na app de cada fornecedor.','Choose an engine or let Maestro coordinate. The catalog distinguishes NAS configuration from access in each provider’s app.')+'</p>'+
-      '<div class="wf-model-row"><label for="wfEngineSelect">'+ui('Motor','Engine')+'</label><select id="wfEngineSelect"></select></div>'+
-      '<div class="wf-model-row"><label for="wfModelSelect">'+ui('Modelo','Model')+'</label><select id="wfModelSelect"></select></div>'+
-      '<div class="wf-model-row"><label for="wfEffortSelect">'+ui('Esforço de raciocínio','Reasoning effort')+'</label><select id="wfEffortSelect"></select></div>'+
+      '<div class="wf-model-row"><label id="wfEngineLbl">'+ui('Motor','Engine')+'</label><div class="wf-chips" id="wfEngineChips" role="group" aria-labelledby="wfEngineLbl"></div><select id="wfEngineSelect" hidden></select></div>'+
+      '<div class="wf-model-row"><label id="wfModelLbl">'+ui('Modelo','Model')+'</label><div class="wf-chips" id="wfModelChips" role="group" aria-labelledby="wfModelLbl"></div><select id="wfModelSelect" hidden></select></div>'+
+      '<div class="wf-model-row"><label for="wfEffortRange">'+ui('Esforço de raciocínio','Reasoning effort')+' <b class="wf-effort-val" id="wfEffortVal"></b></label><input type="range" id="wfEffortRange" min="0" max="0" step="1"><div class="wf-ticks" id="wfEffortTicks"></div><select id="wfEffortSelect" hidden></select></div>'+
       '<p class="wf-model-status" id="wfModelStatus" role="status"></p><details><summary>'+ui('Ver catálogo e disponibilidade','View catalog and availability')+'</summary><ul id="wfModelInventory" class="wf-model-list"></ul></details>';
   }
   function initWorkflowControls() {
