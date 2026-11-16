@@ -2000,7 +2000,7 @@ function esc(s) {
     _autoScrollRaf = window.requestAnimationFrame(function () {
       _autoScrollRaf = 0;
       var b = chatScrollBox();
-      if (!b || (!mustScroll && (b.__follow === false || composerHasFocus()))) return;
+      if (!b || b.__restoring || (!mustScroll && (b.__follow === false || composerHasFocus()))) return;
       var target = Math.max(0, b.scrollHeight - b.clientHeight);
       _autoScrollAt = Date.now();
       _autoScrollTop = target;
@@ -2574,6 +2574,17 @@ function esc(s) {
       : (limited ? "<b>limite atingido</b>" : "resta <b>" + Math.round(rem) + "%</b>");
     return '<span class="quota-batt ' + cls + '"><span class="batt-ico">🔋</span>' + body + '</span>';
   }
+  function dsBudgetHtml(b) {
+    var sub = '<div class="stat-sub">Saldo em dólares (a API não expõe quota). A barra é o orçamento de hoje: 15 € ÷ dias do ciclo.</div>';
+    if (!b || !(b.daily_eur > 0)) return sub;
+    var f = function(v){ return Number(v).toFixed(2).replace('.', ',') + ' €'; };
+    var rem = Math.max(0, Math.min(100, (b.daily_eur - b.today_eur) / b.daily_eur * 100));
+    var cycRem = Math.max(0, Math.min(100, b.remaining_eur / b.cap_eur * 100));
+    var cls = quotaCls(rem, rem <= 0);
+    return '<div class="meter-track battery" title="Orçamento diário"><div class="meter-fill ' + cls + '" style="width:' + rem + '%"></div></div>' +
+      '<div class="stat-sub">Hoje: gasto <b>' + f(b.today_eur) + '</b> de <b>' + f(b.daily_eur) + '</b> · resta <b>' + Math.round(rem) + '%</b>' +
+      '<br>Ciclo: gasto <b>' + f(b.spent_eur) + '</b> de ' + f(b.cap_eur) + ' · resta <b>' + Math.round(cycRem) + '%</b> · reset ' + esc(b.reset_at || '—') + '</div>';
+  }
   function restText(used) {
     var rem = remainingPct(used);
     return rem === null ? "?" : String(Math.round(rem));
@@ -2902,7 +2913,7 @@ function esc(s) {
         '</div>' +
         '<div class="stat-card">' +
           '<div class="stat-head"><span>🔮 DeepSeek API</span><span style="color:var(--green)">' + esc(d.balance_text || "Sem leitura") + '</span></div>' +
-          '<div class="stat-sub">Saldo em dólares — a API não expõe percentagem de quota, por isso não há barra inventada.</div>' +
+          dsBudgetHtml(d.budget) +
         '</div>' +
         '<div class="quota-legenda">🔋 100% = cheio · 0% = esgotado. A barra de cada modelo mostra 7d no Claude e 5h no Codex; passa o rato ou toca para ver a outra janela.</div>' +
         '<button type="button" class="insp-refresh-btn" id="btnRefreshQuotas">🔄 Atualizar quotas agora</button>' +
@@ -3207,9 +3218,9 @@ function esc(s) {
   function restoreScrollFor(chatId) {
     var box = document.getElementById("chatScroll");
     if (!box) return;
-    var v = chatId ? scrollStore()[chatId] : null;
-    if (state.renderedChatId !== chatId) return; /* já se trocou outra vez */
     window.requestAnimationFrame(function () {
+      if (state.renderedChatId !== chatId) return; /* já se trocou outra vez; o restore mais recente trata disto */
+      var v = chatId ? scrollStore()[chatId] : null;
       box.__restoring = false;
       if (v && typeof v.top === "number") {
         box.__follow = false;
@@ -6189,7 +6200,8 @@ function esc(s) {
     var open = isOpen(); panel.classList.toggle('closed', !open); if (!open) panel.style.top = '';
     document.body.classList.toggle('st-open', open && wide());
     var pane = document.getElementById('paneChat');
-    var reserve = open && wide() && pane ? Math.max(0, pane.getBoundingClientRect().right - panel.getBoundingClientRect().left + 12) : 0;
+    /* 40px do #stToggle (left:-40px) + 2 de folga */
+    var reserve = open && wide() && pane ? Math.max(0, pane.getBoundingClientRect().right - panel.getBoundingClientRect().left + 42) : 0;
     document.body.style.setProperty('--st-w', reserve + 'px');
     panel.setAttribute('aria-label', ui('Estratégia do pedido','Request strategy'));
     var toggle = panel.querySelector('#stToggle');
