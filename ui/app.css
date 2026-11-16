@@ -1740,8 +1740,9 @@ html[data-icon-style="duotone"] .folder-pill span:first-child {
     -webkit-tap-highlight-color: transparent;
     opacity: .9; transition: opacity .18s ease;
   }
-  .edge-grip-left { left: 0; padding-left: 14px; }
-  .edge-grip-right { right: 0; padding-right: 14px; border-radius: 13px 0 0 13px; }
+  /* Afastado da margem: os ~32px de fora são do gesto «voltar» do Android. */
+  .edge-grip-left { left: 32px; border-radius: 13px; }
+  .edge-grip-right { right: 32px; border-radius: 13px; }
   .edge-grip span {
     width: 5px; height: 44px; border-radius: 999px;
     background: rgba(148,163,184,.5);
