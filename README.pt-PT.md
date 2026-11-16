@@ -21,9 +21,20 @@ pedido ─► triagem ─► simples? ─► um motor ─► resposta
            quota)                  ├─ scout        (só leitura, barato)
                                    ├─ especialista (escreve código) ┐ em paralelo
                                    └─ revisor      (verifica)       ┘ onde independentes
-                                              │
-                              gate de QA ◄────┘ ─► resposta + painel Estratégia
+                                              │ achados? ─► voltam ao especialista, no mesmo turno
+                          porta de entrega ◄──┘ ─► resposta + painel Estratégia
+                          (texto da resposta + estado real do git; corrige no sítio, sem voltar à fila)
 ```
+
+### Entrega, não relatórios
+
+Um orquestrador só serve se o que volta estiver acabado. Três mecanismos garantem-no:
+
+- **Um contrato de entrega** para todos os que escrevem (turnos simples, nós de um plano, passagens de correção): commit, push, merge e deploy fazem parte do turno; só pedem confirmação apagar dados que o trabalho não criou, gastar dinheiro e enviar algo a terceiros.
+- **A revisão fecha dentro do turno.** Um revisor só de leitura nunca tem a última palavra sobre trabalho por acabar: os achados passam a ser a lista de trabalho do especialista no mesmo turno, e um pedido de alteração nunca termina num plano só de leitura.
+- **Uma porta que confere a realidade.** Uma resposta que pede autorização, declara pendentes ou manda «fazer Ctrl+F5» é recusada e corrigida no sítio. A porta lê também os repositórios em que o turno mexeu: código alterado por commitar ou commits por enviar voltam ao executor.
+
+`tools/ver.py URL --texto "…" [--movel]` dá olhos a qualquer motor: captura e confirmação do texto renderizado, em computador ou telemóvel, com o Chromium que o Playwright já instalou.
 
 ## Funcionalidades
 
@@ -33,7 +44,8 @@ pedido ─► triagem ─► simples? ─► um motor ─► resposta
 | **Fluxos multiagente** | Pedidos complexos viram um grafo de dependências (scout → especialista → revisão), com tarefas de leitura em paralelo. Planos e resultados ficam guardados e podem ser retomados. |
 | **Painel Estratégia** | Ao lado do chat: o raciocínio do orquestrador, o grafo de agentes, o estado de cada nó, o motor/modelo usado e a cronologia de decisões. Acompanha o pedido que estás a ler; sem nenhum à vista mostra o último ou o plano ao vivo. |
 | **Orçamentos de quota** | As quotas semanais dividem-se em orçamentos diários; o DeepSeek tem um orçamento em dinheiro por ciclo, com barra diária e linhas amarela/vermelha para uso extra justificado. |
-| **Scouts só de leitura** | Um modo restrito da API DeepSeek que só lista pastas, lê excertos e faz grep dentro do projeto. |
+| **Scouts e revisores só de leitura** | Um modo restrito da API DeepSeek que só lista pastas, lê excertos e faz grep dentro do projeto; os revisores Claude têm shell só de inspeção (`git status/diff/log/show` e o verificador de páginas). |
+| **Paralelismo real** | Pedidos sobre apps diferentes correm ao mesmo tempo em subscrições diferentes; um Sentinel barato decide a independência, e quem escreve dentro do mesmo plano continua em exclusivo. |
 | **Estúdio web** | Chats e pastas com arquivo, fila de pedidos, quotas e frota ao vivo, seis mundos visuais, interface PT/EN e PWA instalável em computador, tablet e telemóvel. |
 | **Respostas interativas** | As respostas podem mostrar HTML, tabelas, gráficos e cartões de perguntas e respostas passo a passo por plataforma. |
 | **Integrações opcionais** | Média do NAS, Home Assistant e impressoras 3D vivem em `maestro_features.py`; configuras tu. |
@@ -80,6 +92,7 @@ Cada mundo muda cor, tipo de letra e efeitos de toda a app. Escolhe no menu do l
 - Linux (desenvolvido num NAS doméstico), Python 3.11+
 - As CLIs de agentes que queres usar, já com sessão iniciada: `claude`, `codex`, `agy` e/ou uma chave da API DeepSeek
 - Opcional, para exportar GIF: `pip install -r requirements-gif.txt` para `.gif-deps/`
+- Opcional, para verificação visual (`tools/ver.py`): um Chromium do Playwright em `~/.cache/ms-playwright` (`npx playwright install chromium`)
 
 ## Início rápido
 

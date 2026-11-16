@@ -1570,7 +1570,8 @@ function esc(s) {
     if (m.images && m.images.length) {
       inner += '<div class="turn-imgs">' + m.images.map(function(p){
         var url = '/api/image?path=' + encodeURIComponent(p);
-        return '<img src="' + url + '" alt="Anexo" onclick="window.open(\'' + url + '\',\'_blank\')">';
+        /* lazy: um chat longo tem mais de cem anexos; só os que estão à vista são descarregados. */
+        return '<img src="' + url + '" alt="Anexo" loading="lazy" decoding="async" onclick="window.open(\'' + url + '\',\'_blank\')">';
       }).join("") + '</div>';
     }
     bubble.innerHTML = inner;
@@ -4297,10 +4298,22 @@ function esc(s) {
     };
   }
 
+  /* O servidor só reenvia a conversa quando ela mudou (pode passar de 1 MB e o polling é a cada segundo). */
+  function jobUrl(chatId) {
+    var c = state.currentChat;
+    return "/api/chat/job?id=" + encodeURIComponent(chatId) + (c && c.id === chatId && c._v ? "&v=" + encodeURIComponent(c._v) : "");
+  }
+  function sameChat(res, chatId) {
+    if (!res || !res.chat_same || !state.currentChat || state.currentChat.id !== chatId) return false;
+    res.chat = state.currentChat;
+    return true;
+  }
+
   function checkRunningJobForChat(chatId) {
     if (!chatId || (state.currentChat && state.currentChat.id === chatId && state.currentChat.archived)) return;
-    api("/api/chat/job?id=" + encodeURIComponent(chatId)).then(function(res){
+    api(jobUrl(chatId)).then(function(res){
       if (!state.currentChat || state.currentChat.id !== chatId) return;
+      sameChat(res, chatId);
       if (!receiveQueue(res)) return;
       if (res.chat) state.currentChat = res.chat;
       if (res && res.job && ["running", "queued"].indexOf(res.job.status) !== -1) {
@@ -4332,10 +4345,11 @@ function esc(s) {
       if (!state.currentChat || state.currentChat.id !== chatId || state.currentChat.archived) {
         clearInterval(state.jobPollTimer); state.jobPollTimer = null; return;
       }
-      api("/api/chat/job?id=" + encodeURIComponent(chatId)).then(function(res){
+      api(jobUrl(chatId)).then(function(res){
         if (!res || !state.currentChat || state.currentChat.id !== chatId) return;
+        var unchanged = sameChat(res, chatId);
         if (!receiveQueue(res)) return;
-        var changed = res.chat && JSON.stringify(res.chat.messages) !== JSON.stringify(state.currentChat.messages);
+        var changed = !unchanged && res.chat && JSON.stringify(res.chat.messages) !== JSON.stringify(state.currentChat.messages);
         if (res.chat) state.currentChat = res.chat;
         if (res.job && ["running", "queued"].indexOf(res.job.status) !== -1) {
           var activityChanged = !state.activeJob || state.activeJob.task_id !== res.job.task_id || state.activeJob.status !== res.job.status;

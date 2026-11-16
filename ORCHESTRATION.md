@@ -111,3 +111,11 @@ Revisão feita sobre 8 conversas, 476 execuções, 299 turnos e 36 planos. O que
 Revisores e scouts em Claude passam a ter Bash limitado a inspeção: `git status|diff|log|show` e `tools/ver.py`. Verificado com uma chamada real: escrita direta e escrita encadeada atrás de um prefixo permitido são negadas pelo modo `dontAsk`.
 
 Limites conhecidos: a porta de qualidade continua a ler texto (regex PT), não o estado real do repositório; o classificador de domínio/dimensão continua por palavras-chave e contagem de palavras; pedidos seguidos no mesmo chat sobre a mesma app continuam em série, por desenho.
+
+### Segunda ronda (16 novembro)
+
+- **Porta de qualidade com estado real.** `maestro_qagate.repo_findings` olha para os repositórios em que o turno mexeu (pasta do projeto e caminhos citados na resposta): ficheiros de código alterados depois do início do turno e por commitar, e commits do turno por enviar. Trabalho que já lá estava não é imputado ao turno; bases de dados, logs e estado de apps ficam de fora; «não faças commit» no pedido desliga a verificação. Substitui o limite «a porta só lê texto».
+- **Promessas sem prova recusadas:** «faz Ctrl+F5», «limpa a cache», «não vi num browser».
+- **Retoma após interrupção:** um turno reposto na fila por reinício recebe a nota para ver primeiro o estado real. **Quota:** um motor que recusa por quota/orçamento não é tentado segunda vez. **Processos:** o timeout mata o grupo inteiro do motor.
+- **Aviso de login do Claude:** o CLI anuncia o fim da sessão com dias de antecedência; o Maestro guarda o aviso e mostra-o no painel de pensamentos.
+- **Chat grande, medido num browser real** (308 mensagens): abrir descarregava 149 imagens (34 MB) e o polling trazia o JSON da conversa (1,1 MB) a cada segundo durante um trabalho. Agora as imagens carregam só à vista, com altura reservada e cache (`ETag`), e a conversa só é reenviada quando muda (`_v`). Imagens na abertura: 34 MB → 0–2 MB; bloqueio do browser: 1,2–2,0 s → 0,8–0,9 s. `content-visibility` foi medido e rejeitado (sem ganho, mais saltos).

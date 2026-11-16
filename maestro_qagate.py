@@ -1,6 +1,9 @@
 """Quality gate: a reply that says "not ready / must-fix / pending / tell me where" is not delivered; it goes back to the dev loop."""
+import os
 import pathlib
 import re
+import subprocess
+import time
 
 MAX_CYCLES = 3
 VER = pathlib.Path(__file__).resolve().parent / 'tools' / 'ver.py'
@@ -18,6 +21,7 @@ CONTRACT = (
     '- O Hubert usa sobretudo o telemóvel: nunca lhe peças Ctrl+F5, Ctrl+Shift+R ou limpar cache como prova. Confirma tu o que o servidor serve.\n'
     '- Nunca reinicies o maestro-web: mata os pedidos dos outros chats que estão a correr. O código Python do Maestro '
     'recarrega sozinho quando os turnos terminam e os ficheiros ui/* são servidos do disco de imediato.\n'
+    '- O histórico é o git: não cries cópias .bak nem ficheiros «-old»; faz commit do que funciona.\n'
     '- A resposta diz o que ficou «Feito e verificado» com a evidência (comando, URL, commit) e, só se existir, «Bloqueado» '
     '(bloqueio real fora do teu alcance e o que tentaste). Sem lista de pendentes opcionais e sem pergunta de permissão no fim.\n')
 
@@ -29,13 +33,17 @@ _NEG = (r'n[aã]o est[aá] pronto', r'n[aã]o (?:est[aá]|foi|ficou) (?:validad|
         r'veredicto\s*:\s*(?:n[aã]o|reprovad|com ressalvas)', r'^\s*pendente\b', r'\bpendentes?\s*:', r'ainda falta\w*')
 _ASK = (r'diz[- ]?me\s+(?:onde|qual|se|como|quando)', r'queres que\b', r'quer que\b', r'aguardo\b', r'posso avan[cç]ar', r'avan[cç]o\s+(?:com|para)\b.*\?',
         r'deixo (?:isso |o resto )?(?:para|à tua)')
+# "Take my word for it": asking the user to defeat a cache, or admitting nobody looked at the page.
+_UNSEEN = (r'(?:faz|fa[cç]a|carrega|prime|pressiona|experimenta|usa)\w*[^.\n]{0,40}ctrl\s*\+\s*(?:shift\s*\+\s*)?(?:f5|r)\b',
+           r'limpa\w* (?:a |o )?cache',
+           r'n[aã]o (?:vi|verifiquei|confirmei|testei|abri)\b[^.\n]{0,60}(?:browser|navegador|renderizad\w*)')
 _OK = re.compile(r'(?:nada|nenhum[ao]?|sem|zero|0)\s+(?:\w+\s+)?(?:pendente|must-?fix|lacuna|bloqueio)\w*', re.I)
 
 
 def check(text):
     """Return a list of matched reasons (empty = acceptable to deliver)."""
     t = _OK.sub('', str(text or ''))
-    hits = [p for p in _NEG if re.search(p, t, re.I | re.M)]
+    hits = [p for p in _NEG + _UNSEEN if re.search(p, t, re.I | re.M)]
     tail = t[-600:]  # permission questions only matter where the reply ends
     hits += [p for p in _ASK if re.search(p, tail, re.I | re.S)]
     return hits
@@ -52,8 +60,69 @@ def review_open(text):
     return check(t) + [p for p in _REVIEW if re.search(p, _OK.sub('', t), re.I)]
 
 
-def redo_note(text, cycle):
+_SOURCE = {'.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.css', '.scss', '.html', '.md', '.sh', '.yml', '.yaml', '.toml',
+           '.cs', '.vue', '.svelte', '.sql', '.go', '.rs', '.php', '.lua'}
+
+
+def _git(root, *args):
+    return subprocess.run(['git', '-C', str(root)] + list(args), capture_output=True, text=True, timeout=15)
+
+
+def repo_findings(text, cwd, since, request=''):
+    """What the turn really left behind: files it changed and did not commit, commits it made and did not push.
+
+    Repositories are the project folder plus every path the reply mentions. Only changes made
+    after ``since`` count, so work in progress that was already there is never blamed on the turn.
+    """
+    if re.search(r'(?:n[aã]o|sem)\s+(?:\w+\s+){0,3}(?:commit\w*|push|merge|publi\w+)', request or '', re.I):
+        return []  # the user asked for it to stay local
+    roots = []
+    for raw in [str(cwd or '')] + re.findall(r'(?<![\w:/.])(?:~|/[\w.@+-]+)(?:/[\w.@+-]+)+', str(text or '')):
+        path = pathlib.Path(os.path.expanduser(raw.rstrip('.,;:)`')))
+        try:
+            while path != path.parent and not (path / '.git').exists():
+                path = path.parent
+            if (path / '.git').exists() and path not in roots:
+                roots.append(path)
+        except OSError:
+            continue
+    found = []
+    for root in roots[:6]:
+        try:
+            status = _git(root, 'status', '--porcelain')
+            if status.returncode:
+                continue
+            dirty = []
+            for line in status.stdout.splitlines():
+                name = line[3:].split(' -> ')[-1].strip().strip('"')
+                if pathlib.Path(name).suffix.lower() not in _SOURCE:
+                    continue  # databases, logs and app state change by themselves while a service runs
+                try:
+                    if (root / name).stat().st_mtime >= since:
+                        dirty.append(name)
+                except OSError:
+                    pass  # deleted or unreadable: cannot be dated, never blamed
+            stamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(since))
+            ahead = _git(root, 'log', '@{u}..HEAD', '--since=' + stamp, '--oneline')
+            unpushed = ahead.stdout.splitlines() if ahead.returncode == 0 else []  # no upstream: local-only repo
+        except (OSError, subprocess.SubprocessError):
+            continue
+        parts = []
+        if dirty:
+            parts.append('%d ficheiro(s) alterado(s) neste turno por commitar (%s)' % (len(dirty), ', '.join(dirty[:5])))
+        if unpushed:
+            parts.append('%d commit(s) deste turno por enviar (push)' % len(unpushed))
+        if parts:
+            found.append('%s: %s' % (root, '; '.join(parts)))
+    return found
+
+
+def redo_note(text, cycle, repos=()):
     body = str(text or '').strip()[-3500:]
+    if repos:
+        body += ('\n---\nEstado real dos repositórios, verificado pelo Maestro depois da tua resposta:\n' +
+                 '\n'.join('- ' + r for r in repos) + '\nSe fazem parte deste trabalho, fecha: commit, push e o merge/deploy que o pedido implica. '
+                 'Se não são teus, diz na resposta que os deixaste como estavam.')
     return ('\n\n[PORTA DE QUALIDADE · CICLO %d/%d · a entrega anterior foi RECUSADA pelo Maestro]\n' % (cycle, MAX_CYCLES) +
             'A revisão/resposta anterior declarou o trabalho incompleto:\n---\n' + body + '\n---\n'
             'Isto não é um relatório para o Hubert: é a tua lista de trabalho. Implementa TODOS os must-fix, lacunas funcionais e melhorias razoáveis, '
@@ -62,6 +131,8 @@ def redo_note(text, cycle):
             'Verifica primeiro o estado real (git status, ficheiros, serviço): o trabalho anterior já pode estar em parte feito; não o repitas.\n' + CONTRACT)
 
 
-def exhausted_note(hits):
+def exhausted_note(hits, repos=()):
+    if repos and not [h for h in hits if h not in repos]:
+        return '\n\n---\n⚠️ Ficou por fechar no git:\n' + '\n'.join('- ' + r for r in repos)
     return ('\n\n---\n⚠️ Porta de qualidade: após %d ciclos de correção a revisão ainda indicava trabalho em falta. '
             'Estado real acima; o que falta é o que está listado como pendente/must-fix.' % MAX_CYCLES)
