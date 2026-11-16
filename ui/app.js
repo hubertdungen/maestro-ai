@@ -806,13 +806,25 @@ function esc(s) {
   };
 
   document.getElementById("btnGenImage").onclick = function(){
-    var p = document.getElementById("genMediaPrompt").value.trim() || "Futuristic AI指挥 Maestro neon emblem";
-    var asp = document.getElementById("genAspect").value;
+    var pr = document.getElementById("genMediaPrompt");
+    var p = pr.value.trim();
+    var feedback = document.getElementById("genMediaFeedback");
+    if (!p) { pr.focus(); feedback.setAttribute("role", "alert"); feedback.textContent = "Escreve primeiro a descrição da imagem."; return; }
     var btn = document.getElementById("btnGenImage");
     btn.disabled = true; btn.textContent = "⏳ A gerar HD…";
-    api("/api/media/generate-image", { prompt: p, aspect: asp }).then(function(){
+    feedback.setAttribute("role", "status");
+    feedback.textContent = "A gerar a imagem… pode demorar até 40 segundos.";
+    api("/api/media/generate-image", { prompt: p, aspect: document.getElementById("genAspect").value }).then(function(d){
+      if (d.error) throw new Error(d.error);
+      state.galFilter = "all"; state.galSearch = ""; state.galPage = 1;
       loadGallery();
+      feedback.textContent = d.fallback
+        ? "O serviço de imagens não respondeu; criei uma imagem de reserva. Tenta de novo daqui a pouco."
+        : "Imagem criada e guardada na galeria.";
       notifyUser("🎨 Imagem AI Criada", p);
+    }).catch(function(e){
+      feedback.setAttribute("role", "alert");
+      feedback.textContent = "Não foi possível gerar a imagem: " + e.message;
     }).finally(function(){
       btn.disabled = false; btn.textContent = "🖼 Gerar Imagem AI";
     });
@@ -6487,6 +6499,7 @@ function esc(s) {
   var lastKey="";
   function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
   function ago(ts){var s=Math.max(0,Date.now()/1000-ts);return s<60?"agora":s<3600?Math.floor(s/60)+" min":Math.floor(s/3600)+" h";}
+  function claudeLogin(u,b){return fetch(u,{method:"POST",headers:{"X-Maestro-Action":"1","Content-Type":"application/json"},body:JSON.stringify(b)}).then(function(r){return r.json();}).catch(function(){return {ok:false,error:"Sem ligação ao servidor"};});}
   function load(){
     fetch("/api/orchestrator/thoughts",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
       box.classList.toggle("busy",!!d.busy);
@@ -6494,7 +6507,18 @@ function esc(s) {
       document.getElementById("obNow").textContent=d.now;
       var warn=document.getElementById("obWarn");
       if(!warn){ warn=document.createElement("div"); warn.id="obWarn"; warn.className="ob-warn"; document.getElementById("obPop").insertBefore(warn,document.getElementById("obNow")); }
-      warn.hidden=!d.warning; warn.textContent=d.warning||"";
+      warn.hidden=!d.warning;
+      if(!warn.__login||warn.__txt!==d.warning){ warn.__txt=d.warning; warn.__login=1; warn.textContent=d.warning||"";
+        if(d.warning){ var b=document.createElement("button"); b.type="button"; b.className="ob-login"; b.textContent="Iniciar sessão aqui"; warn.appendChild(b);
+          b.onclick=function(e){ e.stopPropagation(); b.disabled=true; b.textContent="A preparar…";
+            claudeLogin("/api/claude-login/start",{}).then(function(r){ b.disabled=false; b.textContent="Iniciar sessão aqui";
+              if(!r.ok){ alert(r.error); return; } window.open(r.url,"_blank","noopener");
+              var f=document.createElement("div"); f.className="ob-login-f"; f.innerHTML='<small>1. Autoriza na página aberta. 2. Cola aqui o código que te der.</small><input placeholder="Código" autocomplete="off"><button type="button">Enviar</button><a href="'+r.url+'" target="_blank" rel="noopener">Abrir o link outra vez</a>';
+              warn.appendChild(f); var i=f.querySelector("input"); i.focus();
+              f.querySelector("button").onclick=function(ev){ ev.stopPropagation(); var bt=ev.target; bt.disabled=true; bt.textContent="A validar…";
+                claudeLogin("/api/claude-login/code",{code:i.value}).then(function(x){ bt.disabled=false; bt.textContent="Enviar";
+                  if(x.ok){ warn.textContent="✅ Sessão do Claude renovada"; warn.__txt=""; setTimeout(load,1500); } else alert(x.error); }); };
+            }); }; } }
       var key=JSON.stringify(d.thoughts.map(function(t){return t.ts;}));
       if(key===lastKey) return; lastKey=key;
       document.getElementById("obList").innerHTML=d.thoughts.length?d.thoughts.map(function(t,i){

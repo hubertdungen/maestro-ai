@@ -2613,3 +2613,6 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 
 .sidebar-left .brand-bar{padding-right:46px}
 .sidebar-left .brand-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ob-login{margin:6px 0 0;display:block;padding:5px 10px;border-radius:8px;border:1px solid color-mix(in srgb,var(--amber,#f59e0b) 60%,transparent);background:transparent;color:inherit;font:inherit;cursor:pointer}
+.ob-login:hover{background:color-mix(in srgb,var(--amber,#f59e0b) 22%,transparent)}
+.ob-login-f{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.ob-login-f small{flex:1 0 100%}.ob-login-f input{flex:1;min-width:0;padding:5px 8px;border-radius:8px;border:1px solid var(--line,#444);background:transparent;color:inherit}.ob-login-f button{padding:5px 10px;border-radius:8px;border:1px solid currentColor;background:transparent;color:inherit}.ob-login-f a{flex:1 0 100%;font-size:11px}

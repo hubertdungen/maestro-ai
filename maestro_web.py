@@ -47,6 +47,7 @@ import maestro_queue as Q
 import maestro_models as MODELS
 import maestro_workflow as WORKFLOW
 import maestro_qagate as QAGATE
+import maestro_claude_login as CLOGIN
 import maestro_runtime as RUNTIME
 import maestro_efficiency as EFFICIENCY
 import maestro_readonly as READONLY
@@ -2905,6 +2906,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 return self._reply(409, {'error': str(exc)})
 
+        if u.path in ("/api/claude-login/start", "/api/claude-login/code"):
+            if self.headers.get("X-Maestro-Action") != "1" or self.headers.get("Sec-Fetch-Site") == "cross-site":
+                return self._reply(403, {"error": "Pedido fora da aplicação"})
+            return self._reply(200, CLOGIN.start() if u.path.endswith("start") else CLOGIN.submit(body.get("code")))
         if u.path == "/api/queue/policy":
             if body.get("policy") in Q.POLICIES:
                 POLICY_PATH.write_text(json.dumps({"policy": body["policy"]}))
