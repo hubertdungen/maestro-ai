@@ -134,3 +134,9 @@ Limites conhecidos: a porta de qualidade continua a ler texto (regex PT), não o
 - **`tools/saude.py`**: mede nos dados reais os indicadores que motivaram a revisão (respostas a pedir autorização, sem verificação, git por fechar, pedidos a dizer que falhou, espera na fila, falhas por motor, motivos da porta) e compara com o período anterior. `--desde "AAAA-MM-DD HH:MM"` mede desde um deploy.
 - **Realidade acima das palavras:** se os repositórios em que o turno mexeu estão com commit e push feitos, uma frase como «não commitei o `__pycache__`» deixa de provocar nova passagem. Sem repositório para conferir, as palavras continuam a contar.
 - **Prova real (16/11, repositórios descartáveis, pelo Maestro em produção):** pedido simples em Haiku, plano multiagente (implementação Sonnet → revisão Haiku → nó `entrega`) e dois pedidos em simultâneo (27–41 s de sobreposição). Nos cinco turnos o executor deixou ficheiros por commitar à primeira; a porta detetou-o no git e o resultado final ficou com commit e push em todos.
+
+## Tabela de preferências e regras de qualidade (2026-11-17)
+
+- `maestro_model_policy.ROUTING_TABLE` diz ao planeador que motor/esforço usar por tipo de tarefa (arquitetura → Opus high, frontend visual premium → Opus high, imagens/mockups → Codex `image_gen.imagegen`, QA visual → Opus high).
+- `QUALITY_RULES`/`guidance()`: regras por gatilho (visual, imagens, arquitetura, insatisfação) entram no planeador **e** em cada subtarefa, também no plano de reserva.
+- Causas corrigidas, medidas no workflow `2b44715b…`: o planeador escreveu `"haiku:haiku"` como motor e o plano inteiro caiu no esquema genérico (agora aceita `motor:modelo`); se o primeiro planeador falha tenta-se o segundo candidato; o papel `architecture` (só leitura) recebe esforço high em vez de herdar o `low` dos scouts.

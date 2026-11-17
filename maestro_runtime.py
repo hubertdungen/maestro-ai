@@ -80,6 +80,10 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
                           (not read_only and inherited.get('transport') == 'deepseek-api')):
             child_plan.pop('model_id', None)
             child_plan.pop('effort', None)
+        if model_id and not effort and task_role in ('architecture', 'review'):
+            # Decisões e QA nunca herdam o esforço mínimo do modelo.
+            entry = next((e for e in entries if e['id'] == model_id), None)
+            effort = MODELS.POLICY.effort_for(entry, task_role) if entry else None
         if model_id:
             selected = MODELS.resolve(model_id, effort, quotas=plan.get('quotas'))
             if selected['engine'] != chosen:
@@ -185,13 +189,26 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
         try:
             if local_reason:
                 raise _LocalPlan(local_reason)
-            planner = invoke(planning_choice['engine'] if planning_choice else preferred, WF.planner_prompt(user_text, allowed, preferred) + '\nCONTEXTO: pasta=' + cwd + '; domínio=' + str(plan.get('domain', project)) + '\nCATÁLOGO DE CAPACIDADES (read_only=true exige read_only_enforced):\n' + json.dumps([{**{k:e[k] for k in ('id','engine','model','efforts','default_effort','read_only_enforced')}, **MODELS.POLICY.profile(e)} for e in entries if e.get('available')], ensure_ascii=False) + '\nCONTEXTO RECENTE (dados, respeita as restrições e resolve referências):\n' + full_prompt[-6000:] + '\nPodes escolher model_id e effort por tarefa, usando apenas este catálogo. As especialidades são preferências locais. Não uses modelos reserve sem motivo. Scouts económicos; arquitetura e revisão difícil podem exigir advanced. Modelos com quota_group igual não são redundância de tokens. Se só existir um motor seguro para leitura, usa-o nas pesquisas e revisão.',
-                             'Planear subtarefas em JSON, sem executar alterações', True, no_tools=True,
-                             model_id=planning_choice['id'] if planning_choice else None, task_role='planning')
-            job['coordinator_label'] = planner['agent_used']
-            if planner.get('failed'):
-                raise RuntimeError(str(planner.get('text') or 'Falha no planeamento')[-500:])
-            proposal = WF.parse_plan(planner['text'], allowed)
+            planner_args = lambda choice: (choice['engine'] if choice else preferred, WF.planner_prompt(user_text, allowed, preferred) + '\nCONTEXTO: pasta=' + cwd + '; domínio=' + str(plan.get('domain', project)) + '\nCATÁLOGO DE CAPACIDADES (read_only=true exige read_only_enforced):\n' + json.dumps([{**{k:e[k] for k in ('id','engine','model','efforts','default_effort','read_only_enforced')}, **MODELS.POLICY.profile(e)} for e in entries if e.get('available')], ensure_ascii=False) + '\nCONTEXTO RECENTE (dados, respeita as restrições e resolve referências):\n' + full_prompt[-6000:] + '\nPodes escolher model_id e effort por tarefa, usando apenas este catálogo. As especialidades são preferências locais. Não uses modelos reserve sem motivo. Scouts económicos; arquitetura e revisão difícil podem exigir advanced. Modelos com quota_group igual não são redundância de tokens. Se só existir um motor seguro para leitura, usa-o nas pesquisas e revisão.',
+                             'Planear subtarefas em JSON, sem executar alterações', True,
+                             dict(no_tools=True, model_id=choice['id'] if choice else None, task_role='planning'))
+            errors = []
+            for choice in (planning_candidates[:2] or [None]):
+                # Um planeador indisponível ou com JSON inválido passa ao seguinte antes do plano genérico.
+                try:
+                    *args, kw = planner_args(choice)
+                    planner = invoke(*args, **kw)
+                    job['coordinator_label'] = planner['agent_used']
+                    if planner.get('failed'):
+                        raise RuntimeError(str(planner.get('text') or 'Falha no planeamento')[-500:])
+                    proposal = WF.parse_plan(planner['text'], allowed)
+                    break
+                except Exception as exc:
+                    if stopped():
+                        raise
+                    errors.append(str(exc)[:240])
+            else:
+                raise RuntimeError(' | '.join(errors))
             proposal['planning_source'] = 'coordinator'
         except _LocalPlan as exc:
             proposal = {'reason': str(exc), 'planning_source': 'local_feedback' if readonly_engines else 'local_capability',
@@ -251,6 +268,7 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
                        f"Tarefa {node['id']}: {node['title']}\n{instruction}\n"
                        + ('Âmbito de escrita reservado: ' + ', '.join(plan['write_paths']) + '. Altera apenas estes ficheiros. Se precisares de outros caminhos, comunica a pendência. Não instales dependências nem reinicies serviços neste âmbito.\n' if plan.get('write_paths') else '')
                        + 'Pedido original do Hubert (objetivo a servir; cumpre a parte que te cabe, sem perder requisitos):\n' + user_text[:6000] + '\n'
+                       + MODELS.POLICY.guidance(user_text + ' ' + instruction)
                        + ('' if node['read_only'] else QAGATE.CONTRACT)
                        + ('Só leitura: não alteres ficheiros, serviços nem estado externo.\n' if node['read_only'] else
                           'Único agente de implementação; testa e corrige os problemas encontrados dentro do objetivo.\n')

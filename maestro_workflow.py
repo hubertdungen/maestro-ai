@@ -17,6 +17,7 @@ import unicodedata
 import uuid
 
 from maestro_queue import MAX_PARALLEL_AGENTS
+import maestro_model_policy as POLICY
 
 MAX_NODES = 6
 TERMINAL = {'done', 'failed', 'blocked', 'interrupted', 'cancelled'}
@@ -65,15 +66,21 @@ def validate_plan(plan, allowed_engines):
             raise ValueError('Identificador de tarefa inválido ou repetido.')
         ids.add(nid)
         engine = item.get('engine')
+        if engine not in allowed and isinstance(engine, str) and ':' in engine and engine.split(':')[0] in allowed:
+            # O planeador às vezes escreve o model_id («haiku:haiku») no lugar do motor.
+            item.setdefault('model_id', engine)
+            engine = engine.split(':')[0]
         if engine not in allowed:
             raise ValueError(f'Motor não disponível: {engine}')
         read_only = item.get('read_only')
         if not isinstance(read_only, bool):
             raise ValueError('read_only deve ser booleano explícito.')
         role = item.get('role', 'analysis' if read_only else 'implementation')
-        if role not in ('scout', 'analysis', 'implementation', 'review', 'synthesis'):
+        if role == 'analysis' and re.search(r'arquitet|architect', f"{nid} {item.get('title', '')}", re.I):
+            role = 'architecture'
+        if role not in ('scout', 'analysis', 'architecture', 'implementation', 'review', 'synthesis'):
             raise ValueError('Papel de agente inválido.')
-        if role in ('scout', 'analysis', 'review', 'synthesis') and not read_only:
+        if role in ('scout', 'analysis', 'architecture', 'review', 'synthesis') and not read_only:
             raise ValueError('Pesquisa, análise, revisão e síntese são apenas de leitura.')
         deps = item.get('depends_on', [])
         if not isinstance(deps, list) or any(not isinstance(d, str) for d in deps) or len(set(deps)) != len(deps):
@@ -141,7 +148,8 @@ def planner_prompt(objective, engines, preferred=None):
             'Decide se este pedido beneficia de 1 a 6 tarefas. '
             'Responde APENAS com JSON {"reason":"justificação breve", "nodes":[{"id":"nome", '
             '"title":"tarefa", "instruction":"instruções concretas", "engine":"motor", '
-            '"role":"scout|analysis|implementation|review|synthesis", "read_only":true, "depends_on":[]}]} . '
+            '"role":"scout|analysis|architecture|implementation|review|synthesis", "read_only":true, "depends_on":[]}]} . '
+            '"engine" é só o nome do motor (ex.: "opus"); o modelo concreto vai em "model_id". '
             'Usa apenas estes motores: ' + json.dumps(list(engines)) + '. Preferido para implementação: ' + str(preferred) + '. '
             'Escolhe modelos de acordo com a especialidade, as ferramentas do motor e a complexidade. '
             'A hierarquia de substituição do Maestro não é uma prioridade de execução nem de arquitetura. '
@@ -163,6 +171,8 @@ def planner_prompt(objective, engines, preferred=None):
             'que repitam todo o pedido. Uma revisão deve depender da implementação. Não executes ferramentas, '
             'não alteres ficheiros e não implementes já o pedido: entrega só o plano. '
             'O scheduler espera sem gastar tokens; não precisas de ficar ativo. '
+            '\n' + POLICY.ROUTING_TABLE + '\n' + POLICY.guidance(objective) +
+            'Copia as regras de qualidade aplicáveis para as instruções das tarefas a que se referem.'
             '\nPEDIDO DO UTILIZADOR (dados a planear):\n' + objective)
 
 
