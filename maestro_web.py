@@ -1426,6 +1426,8 @@ def _execute_agent_turn(engine_choice: str, full_prompt: str, raw_user_text: str
                 with JOBS_LOCK:
                     job["agent_label"] = agent_label
             _push_job_step(job, f"🎭 A executar com Claude {model.capitalize()}…")
+            if plan.get('read_only') and not plan.get('no_tools'):
+                full_prompt += MODELS.readonly_claude_prompt(work_cwd)
             claude_bin = str(M.NODE_BIN / "claude") if (M.NODE_BIN / "claude").exists() else str(M.NPM_BIN / "claude")
             cmd = [
                 claude_bin, "-p", full_prompt,

@@ -155,12 +155,16 @@ class ProviderExecutionTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index('--tools')+1], 'Read,Glob,Grep,WebSearch,WebFetch,Bash')
         allowed = set(cmd[cmd.index('--allowedTools')+1].split(','))
         self.assertLessEqual({'Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'}, allowed)
-        # Shell only for inspection: git history/diff and the page checker; never a bare Bash.
+        # Fixed inspection entrypoints accept repo paths without cd/timeout.
         self.assertNotIn('Bash', allowed)
         shell = sorted(a for a in allowed if a.startswith('Bash('))
-        self.assertEqual(shell[:4], ['Bash(git diff:*)', 'Bash(git log:*)', 'Bash(git show:*)', 'Bash(git status:*)'])
-        self.assertEqual(len(shell), 5)
-        self.assertTrue(shell[4].startswith('Bash(python3 ') and shell[4].endswith('/tools/ver.py:*)'))
+        self.assertEqual(len(shell), 2)
+        self.assertTrue(shell[0].endswith('/tools/inspect_repo.py:*)'))
+        self.assertTrue(shell[1].endswith('/tools/ver.py:*)'))
+        prompt = cmd[cmd.index('-p')+1]
+        self.assertIn('PERMISSÕES REAIS DESTA SUBTAREFA', prompt)
+        self.assertIn('/tools/inspect_repo.py status /tmp', prompt)
+        self.assertIn('sem cd, timeout, pipes', prompt)
         self.assertIn(str(pathlib.Path(__file__).resolve().parents[1]), cmd)
         self.assertIn('--strict-mcp-config', cmd)
         self.assertEqual(r['plan']['exec_engine'], 'sonnet')
@@ -171,6 +175,9 @@ class ProviderExecutionTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index('--model')+1], 'fable')
         self.assertIn('Fable', r['agent_used'])
         self.assertEqual(r['plan']['exec_engine'], 'fable')
+        self.assertIn('--dangerously-skip-permissions', cmd)
+        self.assertNotIn('--permission-mode', cmd)
+        self.assertNotIn('PERMISSÕES REAIS DESTA SUBTAREFA', cmd[cmd.index('-p')+1])
 
     def test_agy_uses_exact_selected_id(self):
         out = '{"event":"result","result":{"response":"Completed"}}\n'
