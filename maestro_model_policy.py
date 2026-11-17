@@ -98,3 +98,45 @@ def rejection_reason(rc, stdout, stderr=''):
     if any(not re.search(pattern, line, re.I) for line in lines):
         return None
     return 'model' if re.search(r'unsupported model|model[^\n]*(?:not found|not available|not supported|does not exist|access denied)', evidence, re.I) else 'quota'
+
+
+# Tabela de preferências do Hubert: o planeador recebe-a inteira; cada subtarefa recebe
+# só as regras cujo gatilho aparece no pedido (também no plano de reserva).
+ROUTING_TABLE = """TABELA DE PREFERÊNCIAS (tipo de tarefa → papel · motor · esforço)
+| Tarefa | role | Motor preferido | Esforço |
+|---|---|---|---|
+| Inventário, procurar ficheiros, ler logs | scout | haiku / economy | low |
+| Arquitetura, decisões que outras tarefas seguem | architecture | opus | high |
+| Código geral, scripts, NAS, testes, debug | implementation | codex (sol) | medium |
+| Frontend visual premium (galeria, portfólio, landing, 3D, animação) | implementation | opus | high |
+| Ajustes de UI pequenos e delimitados | implementation | sonnet | medium |
+| Gerar/editar imagens, mockups, recortes | implementation | codex (image_gen.imagegen) | medium |
+| Curadoria de imagens com visão | implementation | codex ou opus | medium |
+| QA visual (capturas reais vs critérios) | review | opus | high |
+| Revisão de código exigente | review | sonnet ou codex terra | high |
+| Batch/processamento em massa | implementation | deepseek | — |
+Quota apertada num grupo: troca para o motor equivalente de outro grupo antes de baixar o esforço de arquitetura ou QA."""
+
+QUALITY_RULES = (
+    (r'galeria|gallery|portf[oó]lio|landing|\bsite|website|p[aá]gina|\bui\b|\bux\b|react|\b3d\b|anima|design|layout|visual',
+     'VISUAL: entrega de nível profissional, comparável aos melhores templates React atuais; '
+     'reescrita pedida = não reaproveitar o layout antigo. «3D» = profundidade real (camadas, parallax e tilt ao rato, '
+     'transições), não uma grelha plana. Valida com tools/ver.py a 1440/820/390 e ABRE as capturas antes de declarar feito.'),
+    (r'imagem|imagens|image|foto|mockup|render|galeria|gallery|produto|portf[oó]lio',
+     'IMAGENS: curadoria com visão (folha de contacto, ver cada imagem): 3–6 melhores por projeto, sem repetidas, '
+     'desfocadas ou de processo sem interesse; o produto final tem de aparecer (procura em 3DCults, hubertdungen.com, '
+     'cloud4tb). Mockups/edições: Codex com image_gen.imagegen e referenced_image_paths das fotos reais; nunca o '
+     'gerador Pollinations do Maestro. Guarda nos assets do projeto e regista num manifesto o que entra e porquê.'),
+    (r'arquitet|architect|estrutura|stack|reescre|refactor',
+     'ARQUITETURA: abre o código e os ativos reais antes de decidir (nada de decisões às cegas); esforço high.'),
+    (r'podre|fraco|feio|nada profissional|continua (?:igual|mal)|outra vez|por amor de deus|n[aã]o (?:gostei|est[aá] bom)|falta de',
+     'INSATISFAÇÃO: transforma cada queixa do Hubert num critério de aceitação verificável e confirma-o um a um '
+     'no QA; sobe o nível do motor/esforço em relação à tentativa anterior.'),
+)
+
+
+def guidance(text):
+    """Regras de qualidade aplicáveis ao pedido (vazio se nenhuma)."""
+    t = (text or '').casefold()
+    rules = [rule for pattern, rule in QUALITY_RULES if re.search(pattern, t)]
+    return ('\n[REGRAS DE QUALIDADE DO HUBERT]\n- ' + '\n- '.join(rules) + '\n') if rules else ''
