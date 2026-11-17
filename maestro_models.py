@@ -7,6 +7,7 @@ import copy
 import json
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import threading
@@ -199,11 +200,29 @@ def readonly_claude_args():
     """
     here = pathlib.Path(__file__).resolve().parent
     files = 'Read,Glob,Grep,WebSearch,WebFetch'
-    shell = ','.join('Bash(%s:*)' % c for c in ('git status', 'git diff', 'git log', 'git show',
+    shell = ','.join('Bash(%s:*)' % c for c in ('python3 ' + str(here / 'tools' / 'inspect_repo.py'),
                                                'python3 ' + str(here / 'tools' / 'ver.py')))
     return ['--tools', files + ',Bash', '--allowedTools', files + ',' + shell,
             '--add-dir', '/srv/cloud4tb/WORK/DEVELOPMENT', '--add-dir', str(here),
             '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--permission-mode', 'dontAsk']
+
+
+def readonly_claude_prompt(cwd):
+    here = pathlib.Path(__file__).resolve().parent
+    command = 'python3 ' + shlex.quote(str(here / 'tools' / 'inspect_repo.py'))
+    return ('\n\n[PERMISSÕES REAIS DESTA SUBTAREFA DE LEITURA]\n'
+            'Esta etapa de pesquisa/revisão tem ferramentas restritas; a implementação tem um âmbito separado. '
+            'Usa Read para ficheiros (incluindo o contexto do workflow), Glob para listar e Grep para pesquisar. '
+            'WebSearch e WebFetch estão disponíveis. Bash permite apenas os comandos de inspeção abaixo.\n'
+            'Git: ' + command + ' status ' + shlex.quote(cwd) + '\n'
+            'Troca status por log, diff, staged ou branches para outras inspeções; '
+            'passa o caminho do repositório como último argumento.\n'
+            'Página renderizada: python3 ' + str(here / 'tools' / 'ver.py') + ' URL --texto "frase"\n'
+            'Executa cada comando diretamente, sem cd, timeout, pipes, redirecionamentos ou comandos encadeados. '
+            'Não uses Bash para cat/head/tail/find/rg; usa as ferramentas de ficheiros. '
+            'Uma recusa de um comando não significa que Bash ou o Maestro inteiro estejam bloqueados. '
+            'Usa a ferramenta permitida adequada e continua a pesquisa; se faltar uma ação de escrita, '
+            'passa essa necessidade ao implementador sem pedir autorização ao utilizador.\n')
 
 
 def command_config(selection, read_only=False):
