@@ -118,4 +118,4 @@ Projeto pessoal, usado diariamente pelo autor. As interfaces mudam sem aviso. Is
 Copyright © 2026 Hubert Dungen. [PolyForm Noncommercial 1.0.0](LICENSE) para uso não comercial; [licença comercial](COMMERCIAL.md) nos restantes casos. Não é aconselhamento jurídico.
 
 
-<p align="center"><a href="https://dlforge.dungenlabs.com"><img src="docs/branding/dlforge-logo.svg#gh-light-mode-only" alt="DL Forge" width="120"><img src="docs/branding/dlforge-logo-negative.svg#gh-dark-mode-only" alt="DL Forge" width="120"></a></p>
+<p align="center"><a href="https://dlforge.dungenlabs.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/branding/dlforge-logo-negative.svg"><img src="docs/branding/dlforge-logo.svg" alt="DL Forge" width="120"></picture></a></p>
