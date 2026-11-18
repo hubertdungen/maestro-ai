@@ -2030,6 +2030,7 @@ WHY = {
     'capacity': ('🚦', 'espera: os {n} agentes simultâneos estão ocupados'),
     'engine_busy': ('🔧', 'espera: os motores adequados já têm trabalho'),
     'quota': ('🪫', 'espera: quota dos motores esgotada ou em pausa'),
+    'limits_resume': ('🔄', 'retomado sozinho: os limites mudaram e há um plano com quota'),
     'daily_budget': ('💸', 'espera: o orçamento diário protege a quota semanal'),
     'ready': ('🎯', 'escolhi {engine}: livre e dentro do ritmo de quota'),
     'economy': ('🪙', 'escolhi {engine}: pedido leve, poupa quota das subscrições'),
@@ -2069,7 +2070,37 @@ def thoughts_snapshot():
     return dict(now=now, warning=claude_auth_warning(), busy=bool(run or wait), thoughts=list(THOUGHTS)[-25:][::-1])
 
 
+_LIMITS_CHECK = {'at': 0.0}
+
+
+def resume_after_limits_change():
+    """Autoscheduler sem tokens: a cada minuto relê as quotas em cache e devolve à fila os
+    pedidos que desistiram quando surge um plano com quota que não existia nessa altura."""
+    if time.time() - _LIMITS_CHECK['at'] < 60:
+        return
+    _LIMITS_CHECK['at'] = time.time()
+    with TURN_QUEUE.lock:
+        stuck = [dict(t) for t in TURN_QUEUE.tasks if t['status'] == 'interrupted' and t.get('gave_up')]
+    if not stuck:
+        return
+    live = Q.usable(M.classify_task('retomar pedido', str(HOME), []))
+    for task in stuck:
+        go, sig = Q.resumable(task, live)
+        with TURN_QUEUE.lock:
+            current = next((t for t in TURN_QUEUE.tasks if t['id'] == task['id']), None)
+            if not current or current['status'] != 'interrupted':
+                continue
+            if go:
+                think('y', 'limits_resume', task)
+                TURN_QUEUE.update(task['id'], status='queued', reason='evaluating', gave_up=False, auto_retries=0,
+                                  failed_engines=[], failure_notes=[], error=None, limits_sig=None,
+                                  auto_resumes=task.get('auto_resumes', 0) + 1)
+            elif task.get('limits_sig') != sig:
+                TURN_QUEUE.update(task['id'], limits_sig=sig)
+
+
 def schedule_turns_once():
+    resume_after_limits_change()
     with TURN_QUEUE.lock:
         mutation_version = TURN_QUEUE.mutation_version
         positions = {t['id']: i for i, t in enumerate(TURN_QUEUE.tasks)}
@@ -3040,7 +3071,7 @@ class Handler(BaseHTTPRequestHandler):
             with TURN_QUEUE.lock:
                 task = next((t for t in TURN_QUEUE.tasks if t['id'] == body.get('task_id')), None)
                 if task and task['status'] == 'interrupted':
-                    TURN_QUEUE.update(task['id'], status='queued', reason='evaluating', gave_up=False, auto_retries=0, failed_engines=[], failure_notes=[], error=None)
+                    TURN_QUEUE.update(task['id'], status='queued', reason='evaluating', gave_up=False, auto_retries=0, failed_engines=[], failure_notes=[], error=None, limits_sig=None)
             return self._reply(200, {"ok": True})
 
         if u.path == "/api/chat/send":
