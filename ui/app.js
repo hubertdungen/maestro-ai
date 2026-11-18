@@ -1405,7 +1405,37 @@ function esc(s) {
       if (res && res.chat && state.currentChat && state.currentChat.id === res.chat.id) {
         state.currentChat.dismissed = Object.assign({}, state.currentChat.dismissed || {}, res.chat.dismissed || {});
       }
-    }).catch(function(){ /* a cópia local e o mapa da conversa já escondem */ });
+    }).catch(function(){ queueDismissOutbox(chat.id, keys); });
+  }
+  /* O servidor pode ainda não ter a rota (recarga a quente à espera de jobs).
+     A recusa local vale já; esta fila sincroniza-a mal a rota exista. */
+  var DISMISS_OUTBOX = 'maestro-dismiss-outbox-v1';
+  function dismissOutbox() {
+    try { return JSON.parse(localStorage.getItem(DISMISS_OUTBOX) || '{}') || {}; } catch (e) { return {}; }
+  }
+  function saveDismissOutbox(o) {
+    try { localStorage.setItem(DISMISS_OUTBOX, JSON.stringify(o)); } catch (e) {}
+  }
+  function queueDismissOutbox(chatId, keys) {
+    if (!chatId || !keys || !keys.length) return;
+    var o = dismissOutbox(), list = o[chatId] || [];
+    keys.forEach(function(k){ if (list.indexOf(k) < 0) list.push(k); });
+    o[chatId] = list.slice(-500); saveDismissOutbox(o);
+  }
+  function flushDismissOutbox() {
+    var o = dismissOutbox();
+    Object.keys(o).forEach(function(chatId){
+      var keys = o[chatId] || [];
+      if (!keys.length) { delete o[chatId]; saveDismissOutbox(o); return; }
+      api('/api/chat/dismiss', {id:chatId, keys:keys}).then(function(res){
+        var now = dismissOutbox(), left = (now[chatId] || []).filter(function(k){ return keys.indexOf(k) < 0; });
+        if (left.length) now[chatId] = left; else delete now[chatId];
+        saveDismissOutbox(now);
+        if (res && res.chat && state.currentChat && state.currentChat.id === res.chat.id) {
+          state.currentChat.dismissed = Object.assign({}, state.currentChat.dismissed || {}, res.chat.dismissed || {});
+        }
+      }).catch(function(){});
+    });
   }
   function dismissSuggestion(m, nodes) {
     var chat = state.currentChat;
@@ -6007,6 +6037,8 @@ function esc(s) {
     if (state.chats.length) openChat(state.chats[0].id);
     else renderMessages();
   });
+  flushDismissOutbox();
+  setInterval(flushDismissOutbox, 30000);
   setInterval(loadStatusAndPulse, 10000);
   // A tabela só é atualizada enquanto a aba Frota está aberta; o catálogo tem cache própria.
   setInterval(function(){ if (state.inspTab === "fleet" && !document.hidden) loadOrchestration(); }, 30000);
