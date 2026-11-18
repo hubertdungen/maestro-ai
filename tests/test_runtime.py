@@ -118,6 +118,25 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(result['rc'],0)
         self.assertEqual(self.calls,[])
 
+    def test_resume_moves_unfinished_work_off_an_engine_without_quota(self):
+        self.graph['nodes'][1]['model_id'] = 'codex:gpt-sol'
+        original = self.web.execute_agent_turn
+        self.web.execute_agent_turn = lambda *a, **kw: (dict(text='boom', agent_used='codex', rc=1)
+                                                        if kw['job']['node_id'] == 'write' else original(*a, **kw))
+        self.run_turn()
+        self.assertEqual(self.saved()['nodes'][1]['status'], 'failed')
+        self.web.execute_agent_turn = original
+        self.calls.clear()
+        self.entries = [e for e in self.entries if e['engine'] != 'codex']
+        self.plan.update(exec_engine='sonnet', available_engines=['sonnet', 'opus', 'deepseek'])
+        self.job = dict(chat_id='chat', status='running', plan={})
+        result = self.run_turn()
+        self.assertEqual(result['rc'], 0)
+        nodes = {n['id']: n for n in self.saved()['nodes']}
+        self.assertEqual(nodes['scout']['engine'], 'codex')  # finished work keeps its history
+        self.assertEqual((nodes['write']['engine'], nodes['write']['status']), ('sonnet', 'done'))
+        self.assertEqual({c['node']: c['engine'] for c in self.calls}, {'write': 'sonnet', 'review': 'sonnet'})
+
     def test_resume_failed_path_keeps_completed_research_and_failed_output(self):
         original = self.web.execute_agent_turn
         def failing(*args,**kwargs):
