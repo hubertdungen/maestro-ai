@@ -111,7 +111,7 @@ Credentials (API keys, tokens) are read from your environment or local state und
 
 ## Status
 
-Personal project, used daily by its author. Interfaces change without notice. Issues are welcome; support is best-effort unless covered by a commercial licence.
+Personal project, used daily by its author. Interfaces change without notice. Issues are welcome (see [CONTRIBUTING.md](CONTRIBUTING.md)); support is best-effort unless covered by a commercial licence.
 
 ## License
 

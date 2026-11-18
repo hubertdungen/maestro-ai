@@ -5,3 +5,8 @@ __pycache__/
 .gif-deps/
 .claude/
 *.ico.bak*
+.env*
+secrets/
+*.key
+*.pem
+.deploy-backup-*/
