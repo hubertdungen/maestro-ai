@@ -11,7 +11,7 @@ const ctx = {
   setTimeout, clearTimeout
 };
 vm.createContext(ctx);
-vm.runInContext(src.slice(a, b) + ';this.persistDraft=persistDraft;this.restoreDraft=restoreDraft;this.clearDraft=clearDraft;', ctx);
+vm.runInContext(src.slice(a, b) + ';this.appendDraftAttachment=appendDraftAttachment;this.persistDraft=persistDraft;this.restoreDraft=restoreDraft;this.clearDraft=clearDraft;', ctx);
 
 // A: texto + imagem + documento
 ta.value = 'pedido A';
@@ -58,6 +58,14 @@ setTimeout(() => {
   ctx.clearDraft();
   assert.equal(all().B, undefined);
   assert.equal(all().A.text, 'A ainda a escrever');
+  ctx.appendDraftAttachment('A', 'images', '/pastes/late.png');
+  assert.deepEqual(state.pendingImages, ['/pastes/b.png'], 'upload tardio não invade B');
+  state.currentChat = { id: 'A' }; ctx.restoreDraft();
+  assert.equal(state.pendingImages.at(-1), '/pastes/late.png');
+  assert.equal(ta.value, 'A ainda a escrever');
+  // Clearing a submitted draft cancels pending debounce writes.
+  ctx.persistDraft(false); ctx.clearDraft();
+  assert.equal(all().A, undefined);
   assert(rendered > 0);
   console.log('ok');
 }, 350);

@@ -3989,16 +3989,17 @@ function esc(s) {
   }
 
   /* Aceita ficheiros do input, do clipboard (items OU files) e de drag&drop. */
-  function addImageFiles(files) {
+  function addImageFiles(files, targetSlot) {
     var list = imageFiles(files);
     if (!list.length) return Promise.resolve(0);
+    var slot = targetSlot || draftSlot();
     var uploaded = 0;
     return Promise.all(list.map(function(file){
       return new Promise(function(resolve){
         var reader = new FileReader();
         reader.onload = function(){
           api("/api/upload", { name: file.name || "imagem.png", data_url: reader.result }).then(function(res){
-            if (res && res.path) { state.pendingImages.push(res.path); uploaded++; }
+            if (res && res.path) { appendDraftAttachment(slot, "images", res.path); uploaded++; }
             resolve();
           }).catch(function(){ resolve(); });
         };
@@ -4008,8 +4009,7 @@ function esc(s) {
     })).then(function(){
       renderAttachStrip();
       syncComposerBusyUI();
-      if (uploaded) persistDraft(true);
-      else notifyUser("Maestro", ui("Não foi possível anexar a imagem. Tenta outra vez.", "Could not attach the image. Try again."));
+      if (!uploaded) notifyUser("Maestro", ui("Não foi possível anexar a imagem. Tenta outra vez.", "Could not attach the image. Try again."));
       return uploaded;
     });
   }
@@ -4057,6 +4057,7 @@ function esc(s) {
 
   /* Imagem arrastada de outra página/aba: tenta obter o bitmap e guardá-lo no NAS. */
   function attachImageUrl(url) {
+    var slot = draftSlot();
     var local = localImagePath(url);
     if (local) { attachImagePath(local); return Promise.resolve(1); }
     return fetch(url, { mode: "cors" }).then(function(res){
@@ -4064,7 +4065,7 @@ function esc(s) {
       return res.blob();
     }).then(function(blob){
       if (!/^image\//i.test(String(blob.type || ""))) throw new Error("não é imagem");
-      return addImageFiles([new File([blob], "imagem-arrastada.png", { type: blob.type })]);
+      return addImageFiles([new File([blob], "imagem-arrastada.png", { type: blob.type })], slot);
     }).catch(function(){
       notifyUser("Maestro", ui("Essa imagem não pode ser lida da outra página. Guarda-a e arrasta o ficheiro, ou usa Ctrl+V.", "That image cannot be read from the other page. Save it and drag the file, or use Ctrl+V."));
       return 0;
@@ -4123,10 +4124,11 @@ function esc(s) {
   var PASTE_AS_FILE_MIN_LINES = 12;
 
   function addPastedDoc(text) {
+    var slot = draftSlot();
     var name = "colado-" + ((state.pendingDocs || []).length + 1) + ".md";
     return api("/api/paste-file", { text: text, name: name }).then(function(res){
       if (!res || !res.path) throw new Error("sem path");
-      state.pendingDocs.push({
+      appendDraftAttachment(slot, "docs", {
         path: res.path, name: res.name || name,
         chars: res.chars || text.length, lines: res.lines || 0,
         preview: res.preview || text.slice(0, 120)
@@ -4139,6 +4141,13 @@ function esc(s) {
         (res.name || name) + " — o Maestro lê o ficheiro em vez de encher o prompt.");
       return res;
     }).catch(function(){
+      if (draftSlot() !== slot) {
+        var all = readStore(DRAFT_STORE) || {};
+        var draft = all[slot] || { text: "", images: [], docs: [] };
+        draft.text = (draft.text ? draft.text + "\n" : "") + text;
+        draft.ts = Date.now(); all[slot] = draft; writeStore(DRAFT_STORE, all);
+        return;
+      }
       // Fallback: se o servidor não tiver o endpoint, cola normal.
       var ta = document.getElementById("promptInput");
       ta.value = (ta.value ? ta.value + "\n" : "") + text;
@@ -4170,7 +4179,8 @@ function esc(s) {
     if (!dt) return false;
     var types = [];
     try { types = Array.prototype.slice.call(dt.types || []); } catch (e) {}
-    return types.indexOf("Files") !== -1 || types.indexOf("application/x-maestro-image") !== -1;
+    return types.indexOf("Files") !== -1 || types.indexOf("application/x-maestro-image") !== -1 ||
+      types.indexOf("text/uri-list") !== -1 || types.indexOf("text/html") !== -1;
   }
   function clearDropHint() {
     dropDepth = 0;
@@ -4730,12 +4740,12 @@ function esc(s) {
   var draftTimer = null;
   function persistDraft(immediate, slotOverride){
     if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
+    var slot = slotOverride || draftSlot();
+    var txt = ta.value || "";
+    var imgs = (state.pendingImages || []).slice();
+    var docs = (state.pendingDocs || []).slice();
     var write = function(){
       var all = readStore(DRAFT_STORE) || {};
-      var slot = slotOverride || draftSlot();
-      var txt = ta.value || "";
-      var imgs = (state.pendingImages || []).slice();
-      var docs = (state.pendingDocs || []).slice();
       if (txt.trim() || imgs.length || docs.length) {
         all[slot] = { text: txt, images: imgs, docs: docs, ts: Date.now() };
       } else {
@@ -4751,6 +4761,7 @@ function esc(s) {
     if (immediate) write(); else draftTimer = setTimeout(write, 250);
   }
   function clearDraft(slotOverride){
+    if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
     var all = readStore(DRAFT_STORE) || {};
     delete all[slotOverride || draftSlot()];
     writeStore(DRAFT_STORE, all);
@@ -4769,6 +4780,21 @@ function esc(s) {
     state.pendingDocs = Array.isArray(d.docs) ? d.docs.slice() : [];
     renderAttachStrip();
     syncComposerBusyUI();
+  }
+  /* Uploads belong to the chat where they started, even after navigation. */
+  function appendDraftAttachment(slot, kind, attachment) {
+    if (draftSlot() === slot) {
+      (kind === "images" ? state.pendingImages : state.pendingDocs).push(attachment);
+      persistDraft(true);
+      return;
+    }
+    var all = readStore(DRAFT_STORE) || {};
+    var draft = all[slot] || { text: "", images: [], docs: [] };
+    if (!Array.isArray(draft[kind])) draft[kind] = [];
+    draft[kind].push(attachment);
+    draft.ts = Date.now();
+    all[slot] = draft;
+    writeStore(DRAFT_STORE, all);
   }
   function persistLastChat(id){
     try { if (id) localStorage.setItem(LAST_CHAT_STORE, id); } catch(e){}

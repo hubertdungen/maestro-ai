@@ -4,6 +4,8 @@ const src = fs.readFileSync(__dirname + '/../ui/app.js', 'utf8');
 const a = src.indexOf('  function imageFiles'), b = src.indexOf('  function attachImagePath');
 let uploads = 0, rendered = 0, persisted = 0, notices = 0;
 const state = { pendingImages: [] };
+let activeSlot = "A";
+const attachments = {};
 class FakeFileReader {
   readAsDataURL(file) {
     this.result = 'data:' + (file.type || 'image/png') + ';base64,AAAA';
@@ -11,6 +13,12 @@ class FakeFileReader {
   }
 }
 const ctx = {
+  draftSlot: () => activeSlot,
+  appendDraftAttachment(slot, kind, value) {
+    (attachments[slot] ||= []).push(value);
+    if (slot === activeSlot) state.pendingImages.push(value);
+    persisted++;
+  },
   state, FileReader: FakeFileReader, Promise, Array, String, URL, RegExp,
   location: { href: 'http://nas:8109/', origin: 'http://nas:8109' },
   ui: p => p, notifyUser() { notices++; },
@@ -36,5 +44,11 @@ ctx.addImageFiles([png, txt]).then(n => {
   assert.deepEqual(state.pendingImages, ['/pastes/up-1.png']);
   assert(uploads === 1 && rendered === 1 && persisted === 1);
   assert.equal(notices, 0);
-  console.log('ok');
+  const pending = ctx.addImageFiles([png]);
+  activeSlot = 'B'; state.pendingImages = [];
+  return pending.then(() => {
+    assert.deepEqual(state.pendingImages, [], 'upload A não invade B');
+    assert.equal(attachments.A.length, 2, 'imagem fica no chat de origem');
+    console.log('ok');
+  });
 }).catch(e => { console.error(e); process.exit(1); });
