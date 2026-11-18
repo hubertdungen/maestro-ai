@@ -174,6 +174,9 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
         for node in workflow.snapshot()['nodes']:
             if node['status'] in ('interrupted', 'failed'):
                 workflow.retry(node['id'])
+        # The saved plan may name an engine that has since run out of quota.
+        if allowed:
+            workflow.reroute(allowed, preferred)
     else:
         if not allowed:
             raise RuntimeError('Nenhum motor com quota e capacidades disponíveis para este pedido')

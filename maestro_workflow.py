@@ -295,6 +295,16 @@ class Workflow:
             self.data.update(status='pending', coordinator_status='waiting')
             self._save()
 
+    def reroute(self, allowed, engine):
+        """On resume, work still to run leaves engines that are no longer available."""
+        with self.lock:
+            for node in self.data['nodes']:
+                if node['status'] != 'done' and node['engine'] not in allowed:
+                    node['engine'] = engine
+                    node.pop('model_id', None)  # belonged to the previous engine
+                    node.pop('effort', None)
+            self._save()
+
     def run(self, execute, stopped=lambda: False, on_update=lambda snapshot: None):
         """execute(node, context) -> dict; on_update receives every durable change.
 
