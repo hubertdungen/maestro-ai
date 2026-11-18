@@ -886,8 +886,16 @@ html[data-world="dungen"] .bubble { border-radius: 3px; }
   background:
     radial-gradient(90% 130% at 12% 0%, color-mix(in srgb, var(--cyan) 10%, transparent), transparent 62%),
     rgba(255,255,255,.015);
-  display: flex; justify-content: flex-end;
+  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
 }
+.code-decline {
+  min-height: 38px; padding: 8px 14px; border-radius: 10px;
+  border: 1px solid var(--line-strong); background: transparent;
+  color: var(--muted); font-family: var(--sans); font-size: .78rem; font-weight: 600;
+  cursor: pointer; transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.code-decline:hover { color: var(--text); border-color: #fb7185; background: rgba(251,113,133,.1); }
+.code-decline:focus-visible { outline: 2px solid #fb7185; outline-offset: 2px; }
 .code-authorize {
   min-height: 38px; padding: 9px 18px; border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--cyan) 78%, #fff);
@@ -908,8 +916,8 @@ html[data-world="dungen"] .bubble { border-radius: 3px; }
 .code-authorize:disabled { opacity: .55; cursor: wait; transform: none; filter: none; }
 .code-authorize .code-authorize-ico { font-size: .95rem; line-height: 1; }
 @media (max-width: 640px) {
-  .code-card-foot { padding: 9px 10px; }
-  .code-authorize { width: 100%; }
+  .code-card-foot { padding: 9px 10px; flex-direction: column; align-items: stretch; }
+  .code-authorize, .code-decline { width: 100%; min-height: 42px; }
 }
 code.inline-code {
   font-family: var(--mono); font-size: 0.84em; padding: 2px 5px;
@@ -2585,6 +2593,8 @@ html[data-less-outlines] :focus-visible { outline-width: 1px; }
 .attn-bulk button:active,.apply-seen:active{transform:scale(.96)}
 .attn-bulk button:disabled{opacity:.5}
 .apply-seen{align-self:flex-start;margin:4px 0 0 6px;font-size:11px;opacity:.75}
+.apply-decline{color:var(--muted,#94a3b8);border-color:rgba(148,163,184,.35);white-space:nowrap}
+.apply-decline:hover{color:#fecdd3;border-color:#fb7185;background:rgba(251,113,133,.12)}
 
 /* Orquestrador a pensar */
 .orch-brain{position:relative;z-index:70;display:grid;place-items:center;cursor:default;outline:none}

@@ -1195,7 +1195,7 @@ function esc(s) {
           '</div>' +
           (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? '<iframe class="code-visual" sandbox="allow-scripts" srcdoc="' + esc(visualTheme() + code + '<script>(function(){function s(){parent.postMessage({mvh:document.documentElement.scrollHeight},"*")}addEventListener("load",s);if(window.ResizeObserver)new ResizeObserver(s).observe(document.body)})()<\/script>').replace(/"/g, "&quot;") + '"></iframe>' : '') +
           '<pre' + (/^html$/i.test(lang) && /<(svg|canvas|table|div|section|style|script|button|input)\b/i.test(code) ? ' hidden' : '') + '><code>' + esc(code) + '</code></pre>' +
-          (/^(bash|sh|shell)$/i.test(lang) && !/(^|\n)\s*(pwsh|powershell|Install-Module|Connect-[A-Z]\w+|(New|Add|Set|Get|Test|Remove)-[A-Z]\w+|az [a-z-]+ |winget |choco )/.test(code) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button></div>' : '') +
+          (/^(bash|sh|shell)$/i.test(lang) && !/(^|\n)\s*(pwsh|powershell|Install-Module|Connect-[A-Z]\w+|(New|Add|Set|Get|Test|Remove)-[A-Z]\w+|az [a-z-]+ |winget |choco )/.test(code) && !isDismissedKey(codeDismissKey(code)) ? '<div class="code-card-foot"><button type="button" class="code-authorize" data-code-action="' + idx + '"><span class="code-authorize-ico" aria-hidden="true">⚡</span><span>' + ui('Autorizar e avançar', 'Authorize and proceed') + '</span></button><button type="button" class="code-decline" data-code-dismiss="' + idx + '">✕ ' + ui('Recusar', 'Decline') + '</button></div>' : '') +
         '</div>'
       );
       return "\n" + token + "\n";
@@ -1381,19 +1381,53 @@ function esc(s) {
 
   var SEEN_KEY = 'maestro-seen-v1';
   function seenSet() { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); } catch (e) { return {}; } }
-  function isSeen(m) { return !!seenSet()[suggestionKey(m)]; }
-  function markSeen(list) {
+  function dismissedMap() {
+    var d = (state.currentChat || {}).dismissed;
+    return d && typeof d === 'object' ? d : {};
+  }
+  function isDismissedKey(key) { return !!seenSet()[key] || !!dismissedMap()[key]; }
+  function isSeen(m) { return isDismissedKey(suggestionKey(m)); }
+  function markKeysSeen(keys) {
     var s = seenSet(), now = Date.now();
-    list.forEach(function(m){ s[suggestionKey(m)] = now; });
+    keys.forEach(function(k){ s[k] = now; });
     Object.keys(s).sort(function(a, b){ return s[b] - s[a]; }).slice(2000).forEach(function(k){ delete s[k]; });
     try { localStorage.setItem(SEEN_KEY, JSON.stringify(s)); } catch (e) {}
   }
+  function markSeen(list) { markKeysSeen(list.map(function(m){ return suggestionKey(m); })); }
+  /* A recusa fica no servidor: deixa de aparecer também noutro dispositivo. */
+  function persistDismissed(chat, keys) {
+    if (!chat || !chat.id || !keys.length) return Promise.resolve();
+    var now = Date.now();
+    chat.dismissed = chat.dismissed || {};
+    keys.forEach(function(k){ chat.dismissed[k] = now; });
+    return api('/api/chat/dismiss', {id:chat.id, keys:keys}).then(function(res){
+      // Só sincroniza as recusas: substituir a conversa inteira perderia texto ao vivo.
+      if (res && res.chat && state.currentChat && state.currentChat.id === res.chat.id) {
+        state.currentChat.dismissed = Object.assign({}, state.currentChat.dismissed || {}, res.chat.dismissed || {});
+      }
+    }).catch(function(){ /* a cópia local e o mapa da conversa já escondem */ });
+  }
+  function dismissSuggestion(m, nodes) {
+    var chat = state.currentChat;
+    if (!chat) return;
+    var key = suggestionKey(m);
+    markSeen([m]);
+    (nodes || []).forEach(function(el){ if (el && el.remove) el.remove(); });
+    updateJumpUpBtn();
+    persistDismissed(chat, [key]);
+  }
+  function codeDismissKey(code) { return 'code-' + ((state.currentChat || {}).id || '') + '-' + hash32(String(code || '')); }
   function bulkMsgs() {
     var c = state.currentChat;
     if (!c || c.archived) return [];
     return (c.messages || []).filter(function(m){ return m.role === 'assistant' && hasImplementationSuggestion(m) && !isSeen(m) && !suggestionRequested(m); });
   }
-  function bulkSeen() { markSeen(bulkMsgs()); renderMessages(); updateJumpUpBtn(); }
+  function bulkSeen() {
+    var list = bulkMsgs();
+    markSeen(list);
+    persistDismissed(state.currentChat, list.map(function(m){ return suggestionKey(m); }));
+    renderMessages(); updateJumpUpBtn();
+  }
   function bulkContinue(btn) {
     var chat = state.currentChat, list = bulkMsgs();
     if (!chat || !list.length || btn.disabled) return;
@@ -1410,6 +1444,7 @@ function esc(s) {
       model_id:config.model_id, effort:config.effort, text:text, images:[], docs:[], async:true,
       request_id:chat.id + '-' + hash32(text)}).then(function(res){
         markSeen(list);
+        persistDismissed(chat, list.map(function(m){ return suggestionKey(m); }));
         if (!state.currentChat || state.currentChat.id !== chat.id) return;
         if (!receiveQueue(res)) return;
         if (res.chat) state.currentChat = res.chat;
@@ -1635,18 +1670,19 @@ function esc(s) {
     if (hasImplementationSuggestion(m) && !(state.currentChat || {}).archived && !isSeen(m)) {
       var action = document.createElement('button');
       action.type = 'button'; action.className = 'apply-implementation';
-      action.disabled = suggestionRequested(m);
-      action.textContent = action.disabled ? ui('Implementação pedida', 'Implementation requested') : hasPendingWork(m) ? ui('▶ Continuar trabalho', 'Continue work') : ui('Aplicar implementação sugerida', 'Apply suggested implementation');
+      var requested = suggestionRequested(m);
+      action.disabled = requested;
+      action.textContent = requested ? ui('Implementação pedida', 'Implementation requested') : hasPendingWork(m) ? ui('▶ Continuar trabalho', 'Continue work') : ui('Aplicar implementação sugerida', 'Apply suggested implementation');
       action.onclick = function(){ applyImplementationSuggestion(m, action); };
       turn.appendChild(action);
-      if (!action.disabled) {
-        var seen = document.createElement('button');
-        seen.type = 'button'; seen.className = 'apply-seen';
-        seen.textContent = '✓ ' + ui('Visto', 'Seen');
-        seen.title = ui('Esconde esta sugestão', 'Hide this suggestion');
-        seen.onclick = function(){ markSeen([m]); action.remove(); seen.remove(); updateJumpUpBtn(); };
-        turn.appendChild(seen);
-      }
+      var decline = document.createElement('button');
+      decline.type = 'button'; decline.className = 'apply-seen apply-decline';
+      decline.textContent = '✕ ' + (requested ? ui('Dispensar', 'Dismiss') : ui('Recusar', 'Decline'));
+      decline.title = requested
+        ? ui('Esconde este pedido de apply; o trabalho já pedido continua', 'Hide this apply request; work already requested continues')
+        : ui('Recusar esta sugestão e tirar a seta de atenção', 'Decline this suggestion and clear the attention arrow');
+      decline.onclick = function(){ dismissSuggestion(m, [action, decline]); };
+      turn.appendChild(decline);
     }
     return turn;
   }
@@ -2646,6 +2682,18 @@ function esc(s) {
     cancel.onclick = function(){ decide(false); };
     dialog.querySelector('.action-close').onclick = function(){ dialog.close(); };
     document.getElementById('chatScroll').addEventListener('click', function(e){
+      var decline = e.target.closest('[data-code-dismiss]');
+      if (decline && decline.closest('.turn.assistant:not(.live-turn)')) {
+        var codeItem = codeStore[decline.getAttribute('data-code-dismiss')];
+        if (!codeItem || !state.currentChat) return;
+        var key = codeDismissKey(codeItem.code);
+        markKeysSeen([key]);
+        var foot = decline.closest('.code-card-foot');
+        if (foot) foot.remove();
+        updateJumpUpBtn();
+        persistDismissed(state.currentChat, [key]);
+        return;
+      }
       var button = e.target.closest('[data-code-action]');
       if (!button || !button.closest('.turn.assistant:not(.live-turn)')) return;
       var item = codeStore[button.getAttribute('data-code-action')];

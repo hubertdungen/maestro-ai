@@ -383,6 +383,23 @@ def load_chat(chat_id: str) -> dict | None:
         return None
 
 
+def _clean_dismissed(value) -> dict:
+    """Mapa de sugestões recusadas: chaves curtas e um teto para o ficheiro não crescer sem fim."""
+    if not isinstance(value, dict):
+        return {}
+    clean = {}
+    for key, ts in value.items():
+        if not isinstance(key, str) or not key or len(key) > 200:
+            continue
+        try:
+            clean[key] = float(ts)
+        except (TypeError, ValueError):
+            continue
+    if len(clean) > 2000:
+        clean = dict(sorted(clean.items(), key=lambda kv: kv[1])[-2000:])
+    return clean
+
+
 def save_chat(chat: dict) -> dict:
     ensure_all_dirs()
     clean_id = re.sub(r"[^a-zA-Z0-9_-]", "", chat["id"])
@@ -402,11 +419,43 @@ def save_chat(chat: dict) -> dict:
                 for key in ("folder_id", "folder_source", "organized_at", "archived", "archived_at"):
                     if key in previous:
                         chat[key] = previous[key]
+                # A recusa é do utilizador: o snapshot mais antigo de um worker não a pode apagar.
+                dismissed = _clean_dismissed(previous.get('dismissed'))
+                dismissed.update(_clean_dismissed(chat.get('dismissed')))
+                if dismissed:
+                    chat['dismissed'] = _clean_dismissed(dismissed)
             except (OSError, ValueError):
                 pass
         tmp.write_text(json.dumps(chat, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(p)
     return chat
+
+
+def dismiss_chat_items(chat_id: str, keys) -> dict:
+    """Guarda recusas de sugestões/pedidos de apply sem reordenar a conversa."""
+    if not isinstance(keys, (list, tuple)):
+        raise ValueError('keys tem de ser uma lista')
+    wanted = [k for k in keys if isinstance(k, str) and 0 < len(k) <= 200]
+    if not wanted:
+        raise ValueError('Nenhuma sugestão indicada')
+    clean_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(chat_id or ''))
+    p = CHATS_DIR / f"{clean_id}.json"
+    with CHAT_STORAGE_LOCK:
+        if not clean_id or not p.exists():
+            raise KeyError(chat_id)
+        try:
+            chat = json.loads(p.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            raise ValueError('Conversa ilegível') from exc
+        dismissed = _clean_dismissed(chat.get('dismissed'))
+        now = time.time()
+        for key in wanted:
+            dismissed[key] = now
+        chat['dismissed'] = _clean_dismissed(dismissed)
+        tmp = p.with_suffix('.json.dismissing')
+        tmp.write_text(json.dumps(chat, ensure_ascii=False, indent=2), encoding='utf-8')
+        tmp.replace(p)
+        return chat
 
 
 def rename_chat(chat_id: str, title: str) -> dict:
@@ -2877,6 +2926,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(404, {'error': 'Conversa não encontrada'})
             except ValueError as exc:
                 return self._reply(409, {'error': str(exc)})
+
+        if u.path == "/api/chat/dismiss":
+            try:
+                chat = dismiss_chat_items(str(body.get('id') or ''), body.get('keys'))
+                return self._reply(200, {'ok': True, 'chat': chat})
+            except KeyError:
+                return self._reply(404, {'error': 'Conversa não encontrada'})
+            except ValueError as exc:
+                return self._reply(400, {'error': str(exc)})
 
         if u.path == "/api/chat/delete":
             clean_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(body.get("id") or ""))

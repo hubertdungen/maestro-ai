@@ -8,7 +8,7 @@ for (let i = 0; i < 4; i++) msgs.push({role:'assistant', turn_id:'t'+i, text:'Su
 msgs.push({role:'assistant', turn_id:'t9', text:'Tudo feito.'});
 const ctx = { state:{currentChat:{id:'c1', messages:msgs}, messageQueue:[]}, localStorage:{getItem:k=>store[k]||null, setItem:(k,v)=>{store[k]=v;}},
   hash32:s=>String(s.length), ui:(p)=>p, selectedModelConfig:()=>({}), renderMessages(){}, updateJumpUpBtn(){}, receiveQueue:()=>false, notifyUser(){},
-  api:(u,body)=>{ sent = body; return Promise.resolve({}); }, JSON, Object, String, Date };
+  api:(u,body)=>{ if (u === '/api/chat/send') sent = body; return Promise.resolve({}); }, JSON, Object, String, Date };
 vm.createContext(ctx); vm.runInContext(src.slice(a, b) + ';this.bulkMsgs=bulkMsgs;this.bulkSeen=bulkSeen;this.bulkContinue=bulkContinue;', ctx);
 const assert = require('assert');
 assert.strictEqual(ctx.bulkMsgs().length, 4);
@@ -16,7 +16,7 @@ ctx.bulkContinue({disabled:false});
 setTimeout(() => {
   assert(sent && /apply-all-4-/.test(sent.text) && /4\. /.test(sent.text), 'mega-reply');
   assert.strictEqual(ctx.bulkMsgs().length, 0, 'marcadas como vistas após enviar');
-  store = {}; assert.strictEqual(ctx.bulkMsgs().length, 4);
-  ctx.bulkSeen(); assert.strictEqual(ctx.bulkMsgs().length, 0, 'visto em todas');
+  store = {}; ctx.state.currentChat.dismissed = {}; assert.strictEqual(ctx.bulkMsgs().length, 4, 'sem recusas volta a oferecer');
+  ctx.bulkSeen(); assert.strictEqual(ctx.bulkMsgs().length, 0, 'recusadas todas');
   console.log('ok');
 }, 20);
