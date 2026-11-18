@@ -1148,6 +1148,19 @@ code.inline-code {
   background: var(--panel); border: 1px solid rgba(56,189,248,.34);
   box-shadow: 0 12px 34px rgba(0,0,0,.45); padding: 9px 11px;
   display: flex; flex-direction: column; gap: 7px;
+  position: relative;
+}
+.composer-box.drop-image {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(56,189,248,.28), 0 12px 34px rgba(0,0,0,.45);
+}
+.composer-box.drop-image::after {
+  content: attr(data-drop-label);
+  position: absolute; inset: 0; z-index: 3; border-radius: inherit;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(5,9,18,.82); color: #dff4ff;
+  font-family: var(--sans); font-size: .84rem; font-weight: 700; letter-spacing: .01em;
+  pointer-events: none;
 }
 .attach-strip { display: flex; gap: 8px; flex-wrap: wrap; }
 .attach-thumb {

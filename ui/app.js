@@ -744,9 +744,18 @@ function esc(s) {
           '</div>' +
         '</div>';
       card.querySelector("img").onclick = function(){ window.open(url, "_blank"); };
+      card.querySelector("img").draggable = true;
+      card.querySelector("img").addEventListener("dragstart", function(ev){
+        try {
+          ev.dataTransfer.setData("application/x-maestro-image", it.path);
+          ev.dataTransfer.setData("text/plain", url);
+          ev.dataTransfer.effectAllowed = "copy";
+        } catch (e) {}
+      });
       card.querySelector("[data-use-img]").onclick = function(){
         state.pendingImages.push(it.path);
         renderAttachStrip();
+        persistDraft(true);
         setModule("chat");
       };
       var delBtn = card.querySelector("[data-del-img]");
@@ -3913,13 +3922,19 @@ function esc(s) {
         ta.value = String(m.text || ""); ta.focus();
         state.pendingImages = (m.images || []).slice(); state.pendingDocs = (m.docs || []).slice();
         renderAttachStrip();
+        persistDraft(true);
       });
     }).catch(function(){ notifyUser("Maestro", ui("Não foi possível bifurcar.", "Could not fork.")); });
   });
 
   function openChat(id) {
+    /* Guarda o rascunho da conversa que vamos deixar ANTES de trocar de id:
+       um timer de 250 ms não pode gravar o texto antigo no chat novo. */
+    persistDraft(true);
     return api("/api/chat?id=" + encodeURIComponent(id)).then(function(d){
       if (d.chat) {
+        /* O utilizador pode ter continuado a escrever durante o pedido. */
+        persistDraft(true);
         state.currentChat = d.chat;
         syncComposerBusyUI();
         state.liveSig = null;
@@ -3944,7 +3959,9 @@ function esc(s) {
     state.archiveView = false;
     var proj = document.getElementById("selProject").value || "nas";
     var eng = document.getElementById("selEngine").value || "auto";
+    persistDraft(true);
     api("/api/chat/new", { project: proj, engine: eng }).then(function(d){
+      persistDraft(true);
       state.currentChat = d.chat;
       state.activeJob = null;
       state.liveSig = null;
@@ -3965,14 +3982,115 @@ function esc(s) {
   document.getElementById("searchBox").oninput = function(e){ state.search = e.target.value || ""; renderChatList(); };
 
   /* ---- ATTACHMENTS, VOICE & PROMPT ENHANCER ---- */
-  function uploadImageFile(file) {
-    var reader = new FileReader();
-    reader.onload = function(){
-      api("/api/upload", { name: file.name, data_url: reader.result }).then(function(res){
-        if (res.path) { state.pendingImages.push(res.path); renderAttachStrip(); syncComposerBusyUI(); }
+  function imageFiles(files) {
+    return Array.prototype.filter.call(files || [], function(f){
+      return f && /^image\//i.test(String(f.type || ""));
+    });
+  }
+
+  /* Aceita ficheiros do input, do clipboard (items OU files) e de drag&drop. */
+  function addImageFiles(files) {
+    var list = imageFiles(files);
+    if (!list.length) return Promise.resolve(0);
+    var uploaded = 0;
+    return Promise.all(list.map(function(file){
+      return new Promise(function(resolve){
+        var reader = new FileReader();
+        reader.onload = function(){
+          api("/api/upload", { name: file.name || "imagem.png", data_url: reader.result }).then(function(res){
+            if (res && res.path) { state.pendingImages.push(res.path); uploaded++; }
+            resolve();
+          }).catch(function(){ resolve(); });
+        };
+        reader.onerror = function(){ resolve(); };
+        reader.readAsDataURL(file);
       });
-    };
-    reader.readAsDataURL(file);
+    })).then(function(){
+      renderAttachStrip();
+      syncComposerBusyUI();
+      if (uploaded) persistDraft(true);
+      else notifyUser("Maestro", ui("Não foi possível anexar a imagem. Tenta outra vez.", "Could not attach the image. Try again."));
+      return uploaded;
+    });
+  }
+
+  function uploadImageFile(file) { return addImageFiles([file]); }
+
+  /* Imagens que vêm num ClipboardEvent/DataTransfer, em qualquer browser. */
+  function clipboardImageFiles(cd) {
+    var out = [];
+    if (!cd) return out;
+    function add(f) {
+      if (f && /^image\//i.test(String(f.type || "")) && out.indexOf(f) === -1) out.push(f);
+    }
+    if (cd.files) Array.prototype.forEach.call(cd.files, add);
+    if (cd.items) {
+      Array.prototype.forEach.call(cd.items, function(it){
+        if (it.kind === "file" && /^image\//i.test(String(it.type || ""))) add(it.getAsFile());
+      });
+    }
+    return out;
+  }
+
+  /* Caminho de uma imagem que já vive no NAS (galeria, print, anexo). */
+  function localImagePath(value) {
+    var text = String(value || "").trim();
+    if (!text) return "";
+    if (text.charAt(0) === "/" && text.indexOf("/api/") !== 0) return text;
+    try {
+      var url = new URL(text, location.href);
+      if (url.origin === location.origin && url.pathname === "/api/image") {
+        return url.searchParams.get("path") || "";
+      }
+    } catch (e) {}
+    return "";
+  }
+
+  function attachImagePath(path) {
+    if (!path || state.pendingImages.indexOf(path) !== -1) return false;
+    state.pendingImages.push(path);
+    renderAttachStrip();
+    syncComposerBusyUI();
+    persistDraft(true);
+    return true;
+  }
+
+  /* Imagem arrastada de outra página/aba: tenta obter o bitmap e guardá-lo no NAS. */
+  function attachImageUrl(url) {
+    var local = localImagePath(url);
+    if (local) { attachImagePath(local); return Promise.resolve(1); }
+    return fetch(url, { mode: "cors" }).then(function(res){
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.blob();
+    }).then(function(blob){
+      if (!/^image\//i.test(String(blob.type || ""))) throw new Error("não é imagem");
+      return addImageFiles([new File([blob], "imagem-arrastada.png", { type: blob.type })]);
+    }).catch(function(){
+      notifyUser("Maestro", ui("Essa imagem não pode ser lida da outra página. Guarda-a e arrasta o ficheiro, ou usa Ctrl+V.", "That image cannot be read from the other page. Save it and drag the file, or use Ctrl+V."));
+      return 0;
+    });
+  }
+
+  function attachDroppedData(dt) {
+    var files = clipboardImageFiles(dt);
+    if (files.length) return addImageFiles(files);
+    var path = "";
+    try { path = dt.getData("application/x-maestro-image") || ""; } catch (e) {}
+    if (path) { attachImagePath(path); return Promise.resolve(1); }
+    var urls = [];
+    try { urls.push(dt.getData("text/uri-list") || ""); } catch (e) {}
+    try { urls.push(dt.getData("text/plain") || ""); } catch (e) {}
+    try {
+      var html = dt.getData("text/html") || "";
+      var m = html.match(/<img[^>]+src\s*=\s*["']([^"']+)["']/i);
+      if (m) urls.unshift(m[1]);
+    } catch (e) {}
+    for (var i = 0; i < urls.length; i++) {
+      var raw = String(urls[i] || "").split("\n")[0].trim();
+      if (!raw) continue;
+      if (/^data:image\//i.test(raw) || localImagePath(raw)) return attachImageUrl(raw);
+    }
+    return Promise.resolve(0);
   }
 
   function renderAttachStrip() {
@@ -3982,7 +4100,7 @@ function esc(s) {
       var thumb = document.createElement("div");
       thumb.className = "attach-thumb";
       thumb.innerHTML = '<img src="/api/image?path=' + encodeURIComponent(p) + '"><button type="button">✕</button>';
-      thumb.querySelector("button").onclick = function(){ state.pendingImages.splice(idx, 1); renderAttachStrip(); syncComposerBusyUI(); };
+      thumb.querySelector("button").onclick = function(){ state.pendingImages.splice(idx, 1); renderAttachStrip(); syncComposerBusyUI(); persistDraft(true); };
       box.appendChild(thumb);
     });
     (state.pendingDocs || []).forEach(function(d, idx){
@@ -3992,7 +4110,7 @@ function esc(s) {
       chip.innerHTML = '<span>📄</span><span class="doc-name">' + esc(d.name || "colado") + '</span>' +
         '<span style="opacity:.65">' + fmtChars(d.chars) + '</span><button type="button" title="Remover anexo">✕</button>';
       chip.querySelector("button").onclick = function(){
-        state.pendingDocs.splice(idx, 1); renderAttachStrip(); syncComposerBusyUI();
+        state.pendingDocs.splice(idx, 1); renderAttachStrip(); syncComposerBusyUI(); persistDraft(true);
       };
       box.appendChild(chip);
     });
@@ -4015,6 +4133,7 @@ function esc(s) {
       });
       renderAttachStrip();
       syncComposerBusyUI();
+      persistDraft(true);
       document.getElementById("promptInput").focus();
       notifyUser("📄 Texto colado como ficheiro", (res.chars || text.length) + " caracteres guardados em " +
         (res.name || name) + " — o Maestro lê o ficheiro em vez de encher o prompt.");
@@ -4031,14 +4150,52 @@ function esc(s) {
     Array.prototype.forEach.call(e.target.files || [], uploadImageFile);
     e.target.value = "";
   };
+
+  /* Ctrl+V / colar do telemóvel: alguns browsers expõem a imagem em items,
+     outros só em files (Safari/iOS e Chrome Android). Aceita ambos. */
   document.addEventListener("paste", function(e){
-    var items = (e.clipboardData || {}).items || [];
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].type && items[i].type.indexOf("image/") === 0) {
-        var f = items[i].getAsFile();
-        if (f) uploadImageFile(f);
-      }
-    }
+    var files = clipboardImageFiles(e.clipboardData);
+    if (!files.length) return;
+    var txt = "";
+    try { txt = e.clipboardData.getData("text/plain") || ""; } catch (err) {}
+    if (!txt.trim()) e.preventDefault();
+    addImageFiles(files);
+  });
+
+  /* Arrastar imagens (do explorador de ficheiros ou da galeria) para o prompt. */
+  var composerBox = document.getElementById("composerForm");
+  composerBox.setAttribute("data-drop-label", ui("Larga a imagem para anexar", "Drop the image to attach"));
+  var dropDepth = 0;
+  function isImageDrag(dt) {
+    if (!dt) return false;
+    var types = [];
+    try { types = Array.prototype.slice.call(dt.types || []); } catch (e) {}
+    return types.indexOf("Files") !== -1 || types.indexOf("application/x-maestro-image") !== -1;
+  }
+  function clearDropHint() {
+    dropDepth = 0;
+    composerBox.classList.remove("drop-image");
+  }
+  composerBox.addEventListener("dragenter", function(e){
+    if (!isImageDrag(e.dataTransfer)) return;
+    e.preventDefault(); e.stopPropagation();
+    dropDepth++;
+    composerBox.classList.add("drop-image");
+  });
+  composerBox.addEventListener("dragover", function(e){
+    if (!isImageDrag(e.dataTransfer)) return;
+    e.preventDefault(); e.stopPropagation();
+    try { e.dataTransfer.dropEffect = "copy"; } catch (err) {}
+    composerBox.classList.add("drop-image");
+  });
+  composerBox.addEventListener("dragleave", function(e){
+    if (!composerBox.contains(e.relatedTarget)) clearDropHint();
+    else dropDepth = Math.max(0, dropDepth - 1);
+  });
+  composerBox.addEventListener("drop", function(e){
+    e.preventDefault(); e.stopPropagation();
+    clearDropHint();
+    attachDroppedData(e.dataTransfer);
   });
 
   var btnVoice = document.getElementById("btnVoice");
@@ -4555,7 +4712,8 @@ function esc(s) {
   /* ---- RASCUNHOS PERSISTENTES ----
      O auto-update, um F5 ou um crash a meio do turno recarregavam a página e
      levavam o texto já escrito. Aqui o rascunho fica em localStorage, por
-     conversa: sobrevive a reload, a fechar o separador e a reiniciar a app. */
+     conversa: sobrevive a reload, a fechar o separador e a reiniciar a app.
+     Texto E anexos pertencem à conversa: trocar de chat não os transporta. */
   var DRAFT_STORE = "maestro_drafts_v2";
   var QUEUE_STORE = "maestro_queue_v2";
   var LAST_CHAT_STORE = "maestro_last_chat";
@@ -4570,14 +4728,19 @@ function esc(s) {
     return (state.currentChat && state.currentChat.id) ? state.currentChat.id : "__new__";
   }
   var draftTimer = null;
-  function persistDraft(immediate){
+  function persistDraft(immediate, slotOverride){
     if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
     var write = function(){
       var all = readStore(DRAFT_STORE) || {};
-      var slot = draftSlot();
+      var slot = slotOverride || draftSlot();
       var txt = ta.value || "";
-      if (txt.trim()) all[slot] = { text: txt, ts: Date.now() };
-      else delete all[slot];
+      var imgs = (state.pendingImages || []).slice();
+      var docs = (state.pendingDocs || []).slice();
+      if (txt.trim() || imgs.length || docs.length) {
+        all[slot] = { text: txt, images: imgs, docs: docs, ts: Date.now() };
+      } else {
+        delete all[slot];
+      }
       var keys = Object.keys(all);
       if (keys.length > 80) {
         keys.sort(function(a, b){ return (all[a].ts || 0) - (all[b].ts || 0); });
@@ -4587,17 +4750,24 @@ function esc(s) {
     };
     if (immediate) write(); else draftTimer = setTimeout(write, 250);
   }
-  function clearDraft(){
+  function clearDraft(slotOverride){
     var all = readStore(DRAFT_STORE) || {};
-    delete all[draftSlot()];
+    delete all[slotOverride || draftSlot()];
     writeStore(DRAFT_STORE, all);
   }
   function restoreDraft(){
+    /* Qualquer timer pendente é do chat anterior. Se disparasse agora,
+       escrevia o texto antigo no slot do chat novo. */
+    if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
     var all = readStore(DRAFT_STORE) || {};
-    var d = all[draftSlot()];
-    if (!d || typeof d.text !== "string" || !d.text.trim()) return;
-    ta.value = d.text;
-    ta.dispatchEvent(new Event("input"));
+    var d = all[draftSlot()] || {};
+    var txt = (typeof d.text === "string") ? d.text : "";
+    ta.value = txt;
+    ta.style.height = "auto";
+    ta.style.height = Math.min(160, ta.scrollHeight || 24) + "px";
+    state.pendingImages = Array.isArray(d.images) ? d.images.slice() : [];
+    state.pendingDocs = Array.isArray(d.docs) ? d.docs.slice() : [];
+    renderAttachStrip();
     syncComposerBusyUI();
   }
   function persistLastChat(id){
@@ -4626,9 +4796,7 @@ function esc(s) {
     if (!cd) return;
     var txt = "";
     try { txt = cd.getData("text/plain") || ""; } catch(err) { return; }
-    var hasImage = Array.prototype.some.call(cd.items || [], function(it){
-      return it.kind === "file" && String(it.type || "").indexOf("image/") === 0;
-    });
+    var hasImage = clipboardImageFiles(cd).length > 0;
     if (hasImage || !txt.trim()) return;
     var lines = txt.split("\n").length;
     if (txt.length < PASTE_AS_FILE_MIN_CHARS && lines < PASTE_AS_FILE_MIN_LINES) return;
