@@ -227,6 +227,28 @@ def below_pace(engine, quotas):
     return False
 
 
+def usable(plan):
+    """Motores com quota agora, lidos das quotas em cache (sem tokens)."""
+    q = plan.get('quotas', {})
+    c, x, a, d = (q.get(k, {}) for k in ('claude', 'codex', 'antigravity', 'deepseek'))
+    return [e for e in plan.get('available_engines', []) if not (
+        (family(e) == 'codex' and (x.get('five_hour_est_pct', 100) >= 92 or x.get('seven_day_pct', 100) >= 100)) or
+        (family(e) == 'claude' and (c.get('five_hour_pct', 100) >= 90 or c.get('seven_day_pct', 100) >= 100 or c.get('pace_status') == 'limitado')) or
+        (e == 'agy' and a.get('limited', True)) or
+        (e == 'deepseek' and not d.get('available', False))
+    )]
+
+
+def resumable(task, live):
+    """Retoma um pedido que desistiu só quando aparece um plano com quota que não havia
+    quando desistiu (reset ou outro fornecedor). Devolve (retomar, nova_linha_de_base)."""
+    live = sorted({family(e) for e in live})
+    base = task.get('limits_sig')
+    if base is None:
+        return False, live
+    return bool(set(live) - set(base)) and task.get('auto_resumes', 0) < MAX_AUTO_RESUMES, live
+
+
 def decide(task, plan, running):
     """Return engine/reason. Never infer parallel writes from an unrelated topic."""
     workers = executors(running)
@@ -247,12 +269,7 @@ def decide(task, plan, running):
         if 'deepseek' not in available:
             available.append('deepseek')
         plan.setdefault('available_engines', [])[:] = list(dict.fromkeys(plan.get('available_engines', [])+['deepseek']))
-    available = [e for e in available if not (
-        (family(e) == 'codex' and (x.get('five_hour_est_pct', 100) >= 92 or x.get('seven_day_pct', 100) >= 100)) or
-        (family(e) == 'claude' and (c.get('five_hour_pct', 100) >= 90 or c.get('seven_day_pct', 100) >= 100 or c.get('pace_status') == 'limitado')) or
-        (e == 'agy' and a.get('limited', True)) or
-        (e == 'deepseek' and not d.get('available', False))
-    )]
+    available = usable(dict(plan, available_engines=available))
     if budget and not budget.get('available', True):
         alternatives = [e for e in available if e != 'deepseek' and not pace_blocked(e, q)]
         justified = (not alternatives and
@@ -311,6 +328,9 @@ def decide(task, plan, running):
         if runs.count(family(engine)) < MAX_RUNS_PER_ENGINE:
             return engine, ('essential_reserve' if engine in paced else (('parallel' if independent_analysis(task) and not task.get('force') else 'parallel_write') if running else ('economy' if engine == 'deepseek' else 'ready')))
     return None, ('engine_busy' if candidates else 'daily_budget' if paced else 'quota')
+
+
+MAX_AUTO_RESUMES = 3  # ponytail: teto por pedido; evita ciclos se a falha não era de quota
 
 
 class TurnQueue:
