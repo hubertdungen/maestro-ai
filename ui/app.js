@@ -4024,7 +4024,8 @@ function esc(s) {
       if (f && /^image\//i.test(String(f.type || "")) && out.indexOf(f) === -1) out.push(f);
     }
     if (cd.files) Array.prototype.forEach.call(cd.files, add);
-    if (cd.items) {
+    /* files e items descrevem a mesma imagem mas dão objetos File distintos (Chrome): só items se files vier vazio. */
+    if (!out.length && cd.items) {
       Array.prototype.forEach.call(cd.items, function(it){
         if (it.kind === "file" && /^image\//i.test(String(it.type || ""))) add(it.getAsFile());
       });
