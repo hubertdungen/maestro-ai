@@ -116,7 +116,7 @@ ROUTING_TABLE = """TABELA DE PREFERÊNCIAS (tipo de tarefa → papel · motor ·
 | Revisão de código exigente | review | sonnet ou codex terra | high |
 | Batch/processamento em massa | implementation | deepseek | — |
 | Unreal Engine / PC Windows do Hubert (via `ssh desktop`) | implementation | codex ou opus | high |
-Passos que mexem no PC/UE5 (`ssh desktop`) têm read_only=false e só podem ir para codex, opus, fable ou sonnet (o Maestro força isto); tarefas só de leitura não chegam ao PC: trabalham sobre capturas e logs que o implementador trouxe para o NAS.
+Passos que mexem no PC/UE5 (`ssh desktop`) têm read_only=false e só podem ir para codex, opus, fable ou sonnet (o Maestro força isto); tarefas só de leitura não chegam ao PC: trabalham sobre capturas e logs que o implementador trouxe para o NAS, e nunca vão para deepseek/agy (sem ferramentas para ler o projeto).
 Quota apertada num grupo: troca para o motor equivalente de outro grupo antes de baixar o esforço de arquitetura ou QA."""
 
 # Passos que mexem no PC/Unreal: só motores com shell, rede e nível para o UE5 (pedido do Hubert, 2026-11-19).
@@ -143,6 +143,18 @@ def ue_engine(engine, allowed):
     if not alt:
         raise ValueError('Nenhum motor capaz de controlar o UE5 está disponível (codex, opus, fable ou sonnet).')
     return alt
+
+
+UE_READERS = ('haiku', 'sonnet', 'opus', 'fable', 'codex')  # leitura de tarefas UE5: com ferramentas reais
+
+
+def ue_reader(engine, allowed):
+    """Leitura numa tarefa UE5: DeepSeek (API sem comandos) e Antigravity davam «não encontrado» falso."""
+    e = str(engine or '')
+    if not (e.startswith('deepseek') or e == 'agy'):
+        return engine
+    allowed = list(allowed)
+    return next((a for pref in UE_READERS for a in allowed if a == pref or a.startswith(pref) or a.endswith('-' + pref)), engine)
 
 
 QUALITY_RULES = (
