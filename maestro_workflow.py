@@ -99,6 +99,11 @@ def validate_plan(plan, allowed_engines):
                 if not isinstance(item[key], str) or len(item[key]) > 180:
                     raise ValueError('Seleção de modelo/esforço inválida')
                 node[key] = item[key]
+    for node in nodes:
+        if not node['read_only'] and POLICY.touches_ue(node['title'] + ' ' + node['instruction']):
+            engine = POLICY.ue_engine(node['engine'], allowed_engines)
+            if engine != node['engine']:
+                node.update(engine=engine); node.pop('model_id', None); node.pop('effort', None)
     by_id = {n['id']: n for n in nodes}
     visited, visiting = set(), set()
 
@@ -130,6 +135,8 @@ def default_plan(objective, engines, preferred=None):
     if not engines:
         raise ValueError('Nenhum motor disponível para planear.')
     main = preferred if preferred in engines else engines[0]
+    if POLICY.touches_ue(objective):
+        main = POLICY.ue_engine(main, engines)
     scout = next((e for e in ('deepseek', 'agy', 'haiku', 'claude-sonnet') if e in engines), engines[0])
     reviewer = next((e for e in engines if e != main), main)
     return validate_plan({'reason': 'Pesquisa → implementação → revisão; espera local sem chamadas ao modelo.', 'nodes': [
@@ -301,6 +308,8 @@ class Workflow:
             for node in self.data['nodes']:
                 if node['status'] != 'done' and node['engine'] not in allowed:
                     node['engine'] = engine
+                    if not node.get('read_only') and POLICY.touches_ue(node.get('title', '') + ' ' + node.get('instruction', '')):
+                        node['engine'] = POLICY.ue_engine(engine, allowed)
                     node.pop('model_id', None)  # belonged to the previous engine
                     node.pop('effort', None)
             self._save()

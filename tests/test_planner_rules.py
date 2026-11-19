@@ -35,3 +35,30 @@ class PlannerRulesTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class UnrealEngineRuleTests(unittest.TestCase):
+    def test_ue_write_step_leaves_incapable_engine(self):
+        for weak in ('haiku', 'agy', 'deepseek'):
+            plan = WF.validate_plan({'nodes': [node('ue', engine=weak, read_only=False, role='implementation',
+                                                    instruction='Cria o projeto no Unreal por ssh desktop', model_id=weak + ':x')]},
+                                    [weak, 'opus', 'codex'])
+            self.assertEqual(plan['nodes'][0]['engine'], 'codex')
+            self.assertNotIn('model_id', plan['nodes'][0])
+
+    def test_ue_capable_engine_and_read_only_steps_are_kept(self):
+        plan = WF.validate_plan({'nodes': [
+            node('a', engine='fable', read_only=False, role='implementation', instruction='mexe no UE5'),
+            node('b', engine='haiku', role='scout', instruction='lê as capturas do Unreal no NAS')]}, ['fable', 'haiku'])
+        self.assertEqual([n['engine'] for n in plan['nodes']], ['fable', 'haiku'])
+
+    def test_ue_step_without_capable_engine_is_refused(self):
+        with self.assertRaises(ValueError):
+            WF.validate_plan({'nodes': [node('ue', engine='haiku', read_only=False, role='implementation',
+                                               instruction='build com RunUAT')]}, ['haiku', 'agy'])
+
+    def test_fallback_plan_and_non_ue_steps(self):
+        plan = WF.default_plan('faz a fase 1 em Unreal Engine 5', ['agy', 'haiku', 'opus'], preferred='agy')
+        self.assertEqual(next(n for n in plan['nodes'] if n['id'] == 'implement')['engine'], 'opus')
+        plan = WF.validate_plan({'nodes': [node('x', engine='haiku', read_only=False, role='implementation')]}, ['haiku', 'opus'])
+        self.assertEqual(plan['nodes'][0]['engine'], 'haiku')
+

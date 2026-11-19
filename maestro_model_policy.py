@@ -116,7 +116,34 @@ ROUTING_TABLE = """TABELA DE PREFERÊNCIAS (tipo de tarefa → papel · motor ·
 | Revisão de código exigente | review | sonnet ou codex terra | high |
 | Batch/processamento em massa | implementation | deepseek | — |
 | Unreal Engine / PC Windows do Hubert (via `ssh desktop`) | implementation | codex ou opus | high |
+Passos que mexem no PC/UE5 (`ssh desktop`) têm read_only=false e só podem ir para codex, opus, fable ou sonnet (o Maestro força isto); tarefas só de leitura não chegam ao PC: trabalham sobre capturas e logs que o implementador trouxe para o NAS.
 Quota apertada num grupo: troca para o motor equivalente de outro grupo antes de baixar o esforço de arquitetura ou QA."""
+
+# Passos que mexem no PC/Unreal: só motores com shell, rede e nível para o UE5 (pedido do Hubert, 2026-11-19).
+UE_PATTERN = r'unreal|\bue ?5|\bue_5|uasset|\.umap|blueprint|runuat|ssh desktop|\bpc\b|desktop fixo'
+UE_ENGINES = ('codex', 'opus', 'fable', 'sonnet')  # ordem de preferência
+
+
+def touches_ue(text):
+    return bool(re.search(UE_PATTERN, (text or '').casefold()))
+
+
+def ue_capable(engine):
+    e = str(engine or '')
+    return e.startswith('codex') or e in UE_ENGINES or (e.startswith('claude') and 'haiku' not in e)
+
+
+def ue_engine(engine, allowed):
+    """Motor para um passo que mexe no UE5: o mesmo se for capaz, senão o primeiro capaz disponível."""
+    if ue_capable(engine):
+        return engine
+    allowed = list(allowed)
+    alt = next((e for pref in UE_ENGINES for e in allowed if e == pref or e.startswith(pref) or e.endswith('-' + pref)), None)
+    alt = alt or next((e for e in allowed if ue_capable(e)), None)
+    if not alt:
+        raise ValueError('Nenhum motor capaz de controlar o UE5 está disponível (codex, opus, fable ou sonnet).')
+    return alt
+
 
 QUALITY_RULES = (
     (r'galeria|gallery|portf[oó]lio|landing|\bsite|website|p[aá]gina|\bui\b|\bux\b|react|\b3d\b|anima|design|layout|visual',
@@ -128,7 +155,7 @@ QUALITY_RULES = (
      'desfocadas ou de processo sem interesse; o produto final tem de aparecer (procura em 3DCults, hubertdungen.com, '
      'cloud4tb). Mockups/edições: Codex com image_gen.imagegen e referenced_image_paths das fotos reais; nunca o '
      'gerador Pollinations do Maestro. Guarda nos assets do projeto e regista num manifesto o que entra e porquê.'),
-    (r'unreal|\bue ?5|\bue_5|uasset|blueprint|\bpc\b|computador|desktop fixo|windows',
+    (UE_PATTERN + '|computador|windows',
      'PC/UNREAL: o PC Windows do Hubert responde a `ssh desktop <comando>` (cmd; PowerShell via '
      '`powershell -NoProfile -Command`), só com o PC ligado (timeout = desligado: diz isso, não insistas). '
      'UE 5.7.4 em C:\\Program Files\\Epic Games\\UE_5.7: Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe (commandlets, '
