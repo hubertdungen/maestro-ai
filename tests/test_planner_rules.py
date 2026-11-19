@@ -62,3 +62,11 @@ class UnrealEngineRuleTests(unittest.TestCase):
         plan = WF.validate_plan({'nodes': [node('x', engine='haiku', read_only=False, role='implementation')]}, ['haiku', 'opus'])
         self.assertEqual(plan['nodes'][0]['engine'], 'haiku')
 
+    def test_ue_read_step_leaves_engines_without_tools(self):
+        plan = WF.validate_plan({'nodes': [node('scout', engine='deepseek', role='scout', instruction='inventário do projeto Unreal'),
+                                           node('s2', engine='agy', role='scout', instruction='lê o VISAO do UE5')]},
+                                ['deepseek', 'agy', 'haiku', 'opus'])
+        self.assertEqual([n['engine'] for n in plan['nodes']], ['haiku', 'haiku'])
+        plan = WF.validate_plan({'nodes': [node('scout', engine='deepseek', role='scout', instruction='inventário do Unreal')]}, ['deepseek'])
+        self.assertEqual(plan['nodes'][0]['engine'], 'deepseek')  # sem alternativa, não bloqueia a leitura
+

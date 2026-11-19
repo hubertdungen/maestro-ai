@@ -100,8 +100,9 @@ def validate_plan(plan, allowed_engines):
                     raise ValueError('Seleção de modelo/esforço inválida')
                 node[key] = item[key]
     for node in nodes:
-        if not node['read_only'] and POLICY.touches_ue(node['title'] + ' ' + node['instruction']):
-            engine = POLICY.ue_engine(node['engine'], allowed_engines)
+        if POLICY.touches_ue(node['title'] + ' ' + node['instruction']):
+            pick = POLICY.ue_reader if node['read_only'] else POLICY.ue_engine
+            engine = pick(node['engine'], allowed_engines)
             if engine != node['engine']:
                 node.update(engine=engine); node.pop('model_id', None); node.pop('effort', None)
     by_id = {n['id']: n for n in nodes}
