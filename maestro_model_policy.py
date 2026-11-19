@@ -115,6 +115,7 @@ ROUTING_TABLE = """TABELA DE PREFERÊNCIAS (tipo de tarefa → papel · motor ·
 | QA visual (capturas reais vs critérios) | review | opus | high |
 | Revisão de código exigente | review | sonnet ou codex terra | high |
 | Batch/processamento em massa | implementation | deepseek | — |
+| Unreal Engine / PC Windows do Hubert (via `ssh desktop`) | implementation | codex ou opus | high |
 Quota apertada num grupo: troca para o motor equivalente de outro grupo antes de baixar o esforço de arquitetura ou QA."""
 
 QUALITY_RULES = (
@@ -127,6 +128,13 @@ QUALITY_RULES = (
      'desfocadas ou de processo sem interesse; o produto final tem de aparecer (procura em 3DCults, hubertdungen.com, '
      'cloud4tb). Mockups/edições: Codex com image_gen.imagegen e referenced_image_paths das fotos reais; nunca o '
      'gerador Pollinations do Maestro. Guarda nos assets do projeto e regista num manifesto o que entra e porquê.'),
+    (r'unreal|\bue ?5|\bue_5|uasset|blueprint|\bpc\b|computador|desktop fixo|windows',
+     'PC/UNREAL: o PC Windows do Hubert responde a `ssh desktop <comando>` (cmd; PowerShell via '
+     '`powershell -NoProfile -Command`), só com o PC ligado (timeout = desligado: diz isso, não insistas). '
+     'UE 5.7.4 em C:\\Program Files\\Epic Games\\UE_5.7: Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe (commandlets, '
+     '-ExecutePythonScript=) e Engine\\Build\\BatchFiles\\RunUAT.bat BuildCookRun; ficheiros por scp desktop:F:/…; git no PC, '
+     'sem Claude/Codex/node. Nunca fechar o editor nem programas abertos do Hubert, reiniciar o PC ou mexer em definições do Windows. '
+     'Verifica o resultado no próprio PC (ficheiros, logs do UE em Saved/Logs) antes de declarar feito.'),
     (r'arquitet|architect|estrutura|stack|reescre|refactor',
      'ARQUITETURA: abre o código e os ativos reais antes de decidir (nada de decisões às cegas); esforço high.'),
     (r'podre|fraco|feio|nada profissional|continua (?:igual|mal)|outra vez|por amor de deus|n[aã]o (?:gostei|est[aá] bom)|falta de',

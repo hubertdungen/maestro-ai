@@ -28,6 +28,8 @@ class PlannerRulesTests(unittest.TestCase):
         g = P.guidance('Quero uma galeria React com mockups, nada profissional')
         self.assertIn('VISUAL', g); self.assertIn('IMAGENS', g); self.assertIn('INSATISFAÇÃO', g)
         self.assertEqual(P.guidance('reinicia o qbittorrent'), '')
+        self.assertIn('ssh desktop', P.guidance('cria um projeto no Unreal Engine 5'))
+        self.assertIn('Unreal Engine / PC Windows', WF.planner_prompt('ue5', ['opus']))
         self.assertIn('TABELA DE PREFERÊNCIAS', WF.planner_prompt('galeria', ['opus']))
 
 
