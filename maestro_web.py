@@ -1171,7 +1171,8 @@ def _execute_agent_turn(engine_choice: str, full_prompt: str, raw_user_text: str
     canonical_chosen = chosen.removeprefix('claude-')
     if selection and selection['engine'] != canonical_chosen:
         raise ValueError('O modelo selecionado não corresponde ao motor')
-    if plan.get('read_only'):
+    # Exceção: o Antigravity a planear (sem ferramentas) corre em --mode plan, que não escreve.
+    if plan.get('read_only') and not (plan.get('no_tools') and canonical_chosen == 'agy'):
         if not selection:
             candidate = next((e for e in MODELS.catalog()['models'] if e['engine'] == canonical_chosen and e.get('read_only_enforced')), None)
             if not candidate:
