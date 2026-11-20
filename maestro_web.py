@@ -1876,6 +1876,30 @@ def quality_gate(res, eng_key, full_prompt, user_text, cwd, images, plan, proj_k
     return res
 
 
+class SupersededProposal(ValueError):
+    """«Continuar»/«Aplicar proposta» de uma resposta que já tem trabalho posterior."""
+
+
+def superseded_proposal(chat, text, tasks):
+    """Motivo para recusar um [apply-proposal-<turno>] que repetiria trabalho, ou None.
+
+    O botão só vale para a última resposta da conversa e com a conversa parada:
+    um pedido posterior (ou turno em fila/a correr) já pegou no que faltava.
+    A verificação fica aqui porque uma página aberta há horas corre JS antigo."""
+    m = re.match(r'\[apply-proposal-([^\]\s]+)\]', text or '')
+    if not m:
+        return None
+    marker, msgs = m.group(0), chat.get('messages', [])
+    idx = next((i for i, x in enumerate(msgs) if x.get('role') == 'assistant' and x.get('turn_id') == m.group(1)), None)
+    if idx is not None and any(x.get('role') == 'assistant' or (x.get('role') == 'user' and marker not in str(x.get('text') or ''))
+                               for x in msgs[idx + 1:]):
+        return 'Esta resposta já tem pedidos posteriores nesta conversa: continuar a partir dela repetiria trabalho.'
+    if any(t['chat_id'] == chat.get('id') and t['status'] in ('queued', 'running') and marker not in str(t.get('text') or '')
+           for t in tasks):
+        return 'Esta conversa tem trabalho em fila ou a correr: espera que acabe antes de continuar a partir desta resposta.'
+    return None
+
+
 def enqueue_turn(body):
     cid = str(body.get('id') or '')
     with TURN_QUEUE.lock, CHAT_STORAGE_LOCK:
@@ -1883,6 +1907,9 @@ def enqueue_turn(body):
         if chat.get('archived'):
             raise ValueError('Recupera a conversa do arquivo antes de enviar pedidos.')
         body = dict(body, id=chat['id'])
+        dup = superseded_proposal(chat, str(body.get('text') or ''), TURN_QUEUE.tasks)
+        if dup:
+            raise SupersededProposal(dup)
         if body.get('model_id'):
             selected = MODELS.resolve(body['model_id'], body.get('effort'))
             body.update(engine=selected['engine'], effort=selected.get('effort'))
@@ -3090,6 +3117,8 @@ class Handler(BaseHTTPRequestHandler):
                 if body.get("steer"):
                     body = steer_prepare(body)
                 return self._reply(200, enqueue_turn(body))
+            except SupersededProposal as exc:
+                return self._reply(409, {"error": str(exc)})
             except ValueError as exc:
                 return self._reply(400, {"error": str(exc)})
 
