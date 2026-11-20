@@ -1363,20 +1363,24 @@ function esc(s) {
   var PENDING_RE = /\b(?:porta de qualidade|o que falta|ainda nao (?:esta|foi|ficou)|por fazer|ficou pendente|pendentes?|em falta|nao se pode dizer|not done yet|still (?:missing|pending)|remaining work|what.s missing)\b/;
   // Resposta que admite trabalho em falta (porta de qualidade, «o que falta», pendente…).
   function hasPendingWork(m) {
-    if (m.role !== 'assistant') return false;
-    var msgs = (state.currentChat || {}).messages || [];
-    // Só a última resposta, e só se ninguém pediu nada depois (ex.: uma ordem de fecho já em fila ou a correr).
-    // O pedido que este próprio botão enviou não conta: mantém «Implementação pedida».
-    var marker = '[' + suggestionKey(m) + ']', other = function(t){ return String((t && t.text) || '').indexOf(marker) === -1; };
-    if (msgs.indexOf(m) !== -1 && msgs.slice(msgs.indexOf(m) + 1).some(function(x){ return x.role === 'assistant' || (x.role === 'user' && other(x)); })) return false;
-    var cid = (state.currentChat || {}).id;
-    if ((state.messageQueue || []).some(function(t){ return t && (!t.chat_id || t.chat_id === cid) && other(t) && /^(queued|running)$/.test(t.status || ''); })) return false;
+    if (m.role !== 'assistant' || superseded(m)) return false;
     var text = String(m.text || '').replace(/```[\s\S]*?```/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     return PENDING_RE.test(text);
   }
 
+  function superseded(m) {
+    var msgs = (state.currentChat || {}).messages || [];
+    // Só a última resposta, e só se ninguém pediu nada depois (ex.: uma ordem de fecho já em fila ou a correr).
+    // O pedido que este próprio botão enviou não conta: mantém «Implementação pedida».
+    var marker = '[' + suggestionKey(m) + ']', other = function(t){ return String((t && t.text) || '').indexOf(marker) === -1; };
+    if (msgs.indexOf(m) !== -1 && msgs.slice(msgs.indexOf(m) + 1).some(function(x){ return x.role === 'assistant' || (x.role === 'user' && other(x)); })) return true;
+    var cid = (state.currentChat || {}).id;
+    if ((state.messageQueue || []).some(function(t){ return t && (!t.chat_id || t.chat_id === cid) && other(t) && /^(queued|running)$/.test(t.status || ''); })) return true;
+    return false;
+  }
+
   function hasImplementationSuggestion(m) {
-    if (m.role !== 'assistant') return false;
+    if (m.role !== 'assistant' || superseded(m)) return false;
     if (hasPendingWork(m)) return true;
     var text = String(m.text || '').replace(/```[\s\S]*?```/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     return /\b(?:sugiro|suger\w*|recomendaria|podemos implementar|proponho|propoe\w*|podes? implementar|posso (?:implementar|adicionar|criar)|poderiamos|recomendo|i suggest|i recommend|i can implement|we could|proposed flow)\b/.test(text) &&
@@ -1506,10 +1510,10 @@ function esc(s) {
     var config = selectedModelConfig();
     // A stable request id deduplicates retries; the source quote ties this to this exact response.
     var text = hasPendingWork(m) ? '[' + suggestionKey(m) + ']\n' + ui(
-      'Continua o trabalho: executa agora tudo o que a resposta abaixo diz que falta (código, validação, commit, publicação), corrige o que a revisão apontou e repete a validação. Não respondas com mais um relatório.\n\nResposta anterior:\n',
-      'Continue the work: now do everything the reply below says is missing (code, validation, commit, deploy), fix what the review flagged and re-validate. Do not answer with another report.\n\nPrevious reply:\n') + m.text : '[' + suggestionKey(m) + ']\n' + ui(
-      'Implementa e valida a proposta abaixo nesta conversa. Respeita o âmbito e as restrições que já indiquei. Avança com o trabalho autorizado e apresenta o resultado concreto. Se a proposta tiver alternativas incompatíveis, esclarece apenas a escolha necessária.\n\nProposta a aplicar:\n',
-      'Implement and validate the proposal below in this conversation. Respect my existing scope and constraints. Complete the authorized work and report the concrete result. If the proposal contains incompatible alternatives, clarify only the necessary choice.\n\nProposal to apply:\n') + m.text;
+      'Continua o trabalho: executa agora tudo o que a resposta abaixo diz que falta (código, validação, commit, publicação), corrige o que a revisão apontou e repete a validação. Antes de começar, confirma no estado real (git, ficheiros, fila) o que já foi feito depois dessa resposta e não o repitas. Não respondas com mais um relatório.\n\nResposta anterior:\n',
+      'Continue the work: now do everything the reply below says is missing (code, validation, commit, deploy), fix what the review flagged and re-validate. First check the real state (git, files, queue) for what was already done after that reply and do not repeat it. Do not answer with another report.\n\nPrevious reply:\n') + m.text : '[' + suggestionKey(m) + ']\n' + ui(
+      'Implementa e valida a proposta abaixo nesta conversa. Primeiro confirma no estado real o que já está feito e não o repitas. Respeita o âmbito e as restrições que já indiquei. Avança com o trabalho autorizado e apresenta o resultado concreto. Se a proposta tiver alternativas incompatíveis, esclarece apenas a escolha necessária.\n\nProposta a aplicar:\n',
+      'Implement and validate the proposal below in this conversation. First check the real state for what is already done and do not repeat it. Respect my existing scope and constraints. Complete the authorized work and report the concrete result. If the proposal contains incompatible alternatives, clarify only the necessary choice.\n\nProposal to apply:\n') + m.text;
     return api('/api/chat/send', {id:chat.id, project:chat.project || 'nas', engine:chat.engine || 'auto',
       model_id:config.model_id, effort:config.effort, text:text, images:[], docs:[], async:true,
       request_id:chat.id + '-' + suggestionKey(m)}).then(function(res){
@@ -1519,7 +1523,11 @@ function esc(s) {
         if (res.chat) state.currentChat = res.chat;
         state.activeJob = res.job || null;
         renderMessages(); syncComposerBusyUI(); startJobPolling(chat.id);
-      }).catch(function(){
+      }).catch(function(e){
+        if (/HTTP 409/.test(String(e && e.message))) {
+          button.textContent = ui('Já há trabalho posterior', 'Later work exists');
+          return notifyUser('Maestro', ui('Não foi pedido: já há trabalho posterior nesta conversa e repeti-lo duplicaria o esforço.', 'Not queued: this chat already has later work, repeating it would duplicate effort.'));
+        }
         button.disabled = false;
         button.textContent = ui('Aplicar implementação sugerida', 'Apply suggested implementation');
         notifyUser('Maestro', ui('Não foi possível confirmar o pedido. Podes tentar novamente.', 'Could not confirm the request. You can retry.'));
