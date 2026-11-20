@@ -29,6 +29,11 @@ const assert = require('assert');
   // Já se pediu outra coisa depois (ex.: uma ordem de fecho a correr): o botão sai, para não relançar trabalho fechado.
   chat.messages.push({role:'user', text:'ordem de fecho', ts:3}); await p.reload(); await p.waitForTimeout(1500); await p.getByText('ZZTESTE').first().click(); await p.waitForTimeout(1500);
   const d = await btns(); console.log('com pedido posterior:', d); assert.deepStrictEqual(d, []);
+  // Sem recarregar: o botão desenhado quando a resposta era a última sai quando chega um pedido posterior.
+  chat.messages.pop(); await p.reload(); await p.waitForTimeout(1500); await p.getByText('ZZTESTE').first().click(); await p.waitForTimeout(1500);
+  assert.deepStrictEqual(await btns(), ['▶ Continuar trabalho']);
+  chat.messages.push({role:'user', text:'ordem seguinte', ts:3}); await p.getByText('ZZTESTE').first().click(); await p.waitForTimeout(1500);
+  const e = await btns(); console.log('pedido posterior sem recarregar:', e); assert.deepStrictEqual(e, []);
   chat.messages.pop(); await p.reload(); await p.waitForTimeout(1500); await p.getByText('ZZTESTE').first().click(); await p.waitForTimeout(1500);
   const bt = p.locator('button', {hasText:'Continuar trabalho'}).first();
   await bt.click(); await p.waitForTimeout(1000);

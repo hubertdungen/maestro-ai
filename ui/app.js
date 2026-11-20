@@ -1357,7 +1357,9 @@ function esc(s) {
       ((m.images || []).length) + "§" + ((m.images || []).join(",")) + "§" +
       ((m.docs || []).map(function(d){ return d.path; }).join(",")) + "§" +
       (m.elapsed_s || "") + "§" +
-      (m.plan ? "P" + (m.plan.domain || "") + (m.plan.dimension || "") + (m.plan.agents || []).join(",") + (m.tools || []).join(",") : "");
+      (m.plan ? "P" + (m.plan.domain || "") + (m.plan.dimension || "") + (m.plan.agents || []).join(",") + (m.tools || []).join(",") : "") +
+      // O botão «Continuar» depende do que veio depois: um pedido posterior tem de redesenhar a resposta.
+      (m.role === "assistant" && superseded(m) ? "§S" : "");
   }
 
   var PENDING_RE = /\b(?:porta de qualidade|o que falta|ainda nao (?:esta|foi|ficou)|por fazer|ficou pendente|pendentes?|em falta|nao se pode dizer|not done yet|still (?:missing|pending)|remaining work|what.s missing)\b/;
