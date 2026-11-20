@@ -202,6 +202,14 @@ class ProviderExecutionTests(unittest.TestCase):
             self.assertNotEqual(r['rc'], 0)
         self.assertEqual(self.commands, [])
 
+    def test_agy_planning_runs_in_plan_mode_without_skipping_permissions(self):
+        self.invoke('agy', 'agy:gemini-test-high', readonly=True, no_tools=True,
+                    output='{"event":"result","result":{"response":"{}"}}\n')
+        cmd = self.commands[-1]
+        self.assertIn('--mode', cmd)
+        self.assertEqual(cmd[cmd.index('--mode') + 1], 'plan')
+        self.assertNotIn('--dangerously-skip-permissions', cmd)
+
     def test_provider_model_mismatch_rejected_before_spawn(self):
         try:
             r = self.invoke('sonnet', 'codex:gpt-test-terra', 'high')
