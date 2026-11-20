@@ -2024,7 +2024,8 @@ function esc(s) {
       var bits = [];
       if (j.last_line) bits.push("↳ " + (j.last_line.length > 150 ? j.last_line.slice(0, 150) + "…" : j.last_line));
       if (j.cpu_s > 0) bits.push("cpu " + j.cpu_s + "s");
-      if (j.idle_s > 180) bits.push(ui("Sem saída há ", "No output for ") + Math.round(j.idle_s / 60) + ui(" min · a execução pode continuar ativa", " min · execution may still be active"));
+      if (j.idle_s > 180) bits.push(ui("Sem saída há ", "No output for ") + Math.round(j.idle_s / 60) + " min · " +
+        (j.running_cmd ? ui("a correr: ", "running: ") + j.running_cmd : ui("a execução pode continuar ativa", "execution may still be active")));
       else if (j.idle_s > 20) bits.push(ui("sem saída há ", "no output for ") + Math.round(j.idle_s) + "s");
       var subTxt = bits.join(" · ");
       if (sub.textContent !== subTxt) sub.textContent = subTxt;
