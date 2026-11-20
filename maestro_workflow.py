@@ -18,6 +18,7 @@ import uuid
 
 from maestro_queue import MAX_PARALLEL_AGENTS
 import maestro_model_policy as POLICY
+import maestro_worktree as WT
 
 MAX_NODES = 6
 TERMINAL = {'done', 'failed', 'blocked', 'interrupted', 'cancelled'}
@@ -94,6 +95,13 @@ def validate_plan(plan, allowed_engines):
         nodes.append(dict(id=nid, title=title, instruction=instruction, engine=engine,
                           read_only=read_only, role=role, depends_on=list(deps)))
     for node, item in zip(nodes, raw):
+        paths, repo = item.get('write_paths'), item.get('repo')
+        # Escrita em paralelo: âmbito próprio num worktree git (ver maestro_worktree).
+        # Um âmbito mal declarado não deita fora o plano: a tarefa fica só exclusiva.
+        if (not node['read_only'] and isinstance(paths, list) and 1 <= len(paths) <= 20 and
+                all(isinstance(x, str) and x.strip() and not x.startswith('/') and '..' not in x for x in paths) and
+                isinstance(repo, str) and repo.startswith('/') and pathlib.Path(repo, '.git').exists()):
+            node.update(write_paths=list(paths), repo=repo.rstrip('/'))
         for key in ('model_id', 'effort'):
             if item.get(key):
                 if not isinstance(item[key], str) or len(item[key]) > 180:
@@ -157,7 +165,8 @@ def planner_prompt(objective, engines, preferred=None):
             'Decide se este pedido beneficia de 1 a 6 tarefas. '
             'Responde APENAS com JSON {"reason":"justificação breve", "nodes":[{"id":"nome", '
             '"title":"tarefa", "instruction":"instruções concretas", "engine":"motor", '
-            '"role":"scout|analysis|architecture|implementation|review|synthesis", "read_only":true, "depends_on":[]}]} . '
+            '"role":"scout|analysis|architecture|implementation|review|synthesis", "read_only":true, "depends_on":[]}]} '
+            '(tarefas de escrita paralelas acrescentam "repo" e "write_paths"). '
             '"engine" é só o nome do motor (ex.: "opus"); o modelo concreto vai em "model_id". '
             'Usa apenas estes motores: ' + json.dumps(list(engines)) + '. Preferido para implementação: ' + str(preferred) + '. '
             'Escolhe modelos de acordo com a especialidade, as ferramentas do motor e a complexidade. '
@@ -172,7 +181,13 @@ def planner_prompt(objective, engines, preferred=None):
             'Se as partes forem muito ligadas ou a divisão custar mais que uma execução única, usa uma tarefa. '
             'Pesquisa deve ser barata. Agentes de pesquisa/análise/revisão/síntese são só leitura. '
             'As dependências formam um DAG e passam resultados entre agentes; tarefas independentes podem correr '
-            'em paralelo entre fornecedores (até 4 agentes, um por plano de subscrição); a escrita na missão será exclusiva. Prefere planos com quota abaixo do ritmo pretendido quando adequados. '
+            'em paralelo entre fornecedores (até 4 agentes, um por plano de subscrição). Prefere planos com quota abaixo do ritmo pretendido quando adequados. '
+            'Escrita: por omissão é exclusiva (um escritor de cada vez). Para escrever em PARALELO, cada tarefa de escrita '
+            'declara "repo" (caminho absoluto do repositório git) e "write_paths" (caminhos relativos que só ela altera, '
+            'sem sobreposição com outras tarefas paralelas): corre num worktree git próprio e o Maestro faz o commit e junta o ramo '
+            'quando acaba. Usa isto para partes independentes (ex.: documentação, dados, testes portados, enquanto outra tarefa mexe no código). '
+            'Essas tarefas não fazem push, PR, merge nem passos em máquinas partilhadas (ex.: ssh desktop/builds): isso fica numa '
+            'tarefa posterior sem write_paths que dependa delas e publique tudo. '
             'Dimensiona os agentes pelo pedido: simples usa um; amplo divide apenas se reduzir o tempo sem perder qualidade. '
             'Poupa tokens com contexto delimitado, pesquisa económica e sem duplicar exploração. '
             'Mantém o especialista necessário; não baixes a qualidade para ocupar uma vaga. '
@@ -206,6 +221,25 @@ def build_plan(objective, engines, preferred=None, planner=None):
     return plan
 
 
+def isolated(node):
+    """Escritor com âmbito próprio: corre num worktree git e não toca no checkout principal."""
+    return bool(not node.get('read_only') and node.get('write_paths') and node.get('repo'))
+
+
+def can_start(node, active):
+    """Leitores correm juntos; um escritor sem âmbito corre sozinho; escritores isolados
+    correm em paralelo entre si e com leitores, desde que os âmbitos não se sobreponham."""
+    if not active:
+        return True
+    if node['read_only']:
+        return all(n['read_only'] or isolated(n) for n in active)
+    if not isolated(node):
+        return False
+    return all(n['read_only'] or (isolated(n) and not (n['repo'] == node['repo'] and
+                                                       WT.overlaps(n['write_paths'], node['write_paths'])))
+               for n in active)
+
+
 class Workflow:
     def __init__(self, path, plan, objective=''):
         self.path = pathlib.Path(path)
@@ -222,8 +256,8 @@ class Workflow:
             # A turn id must never silently acquire a different objective or plan.
             if loaded.get('objective') != objective:
                 raise ValueError('O pedido guardado é diferente; usa um novo identificador de turno.')
-            old_spec = [{k: n.get(k) for k in ('id', 'title', 'instruction', 'engine', 'read_only', 'role', 'depends_on', 'model_id', 'effort')} for n in loaded['nodes']]
-            new_spec = [{k: n.get(k) for k in ('id', 'title', 'instruction', 'engine', 'read_only', 'role', 'depends_on', 'model_id', 'effort')} for n in plan['nodes']]
+            old_spec = [{k: n.get(k) for k in ('id', 'title', 'instruction', 'engine', 'read_only', 'role', 'depends_on', 'model_id', 'effort', 'write_paths', 'repo')} for n in loaded['nodes']]
+            new_spec = [{k: n.get(k) for k in ('id', 'title', 'instruction', 'engine', 'read_only', 'role', 'depends_on', 'model_id', 'effort', 'write_paths', 'repo')} for n in plan['nodes']]
             if old_spec != new_spec:
                 raise ValueError('O plano guardado é diferente; carrega primeiro o plano persistido.')
             self.data = loaded
@@ -237,7 +271,7 @@ class Workflow:
     def load(cls, path):
         value = json.loads(pathlib.Path(path).read_text())
         plan = {k: value.get(k) for k in ('version', 'reason', 'planning_source', 'planning_error')}
-        plan['nodes'] = [{k: n.get(k) for k in ('id', 'title', 'instruction', 'engine', 'read_only', 'role', 'depends_on', 'model_id', 'effort')} for n in value['nodes']]
+        plan['nodes'] = [{k: n.get(k) for k in ('id', 'title', 'instruction', 'engine', 'read_only', 'role', 'depends_on', 'model_id', 'effort', 'write_paths', 'repo')} for n in value['nodes']]
         return cls(path, plan, value.get('objective', ''))
 
     def _save(self):
@@ -390,8 +424,8 @@ class Workflow:
                             continue
                         if len(active) >= MAX_PARALLEL_AGENTS:
                             break
-                        # Mutations are exclusive across the entire workflow.
-                        if active and (not node['read_only'] or any(not n['read_only'] for n in active.values())):
+                        # Escrita exclusiva, salvo escritores isolados com âmbitos disjuntos.
+                        if not can_start(node, list(active.values())):
                             continue
                         context = {'objective': self.data['objective'], 'dependency_results': {
                             dep: copy.deepcopy(by_id[dep].get('result') or {}) for dep in node['depends_on']}}

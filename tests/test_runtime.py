@@ -166,6 +166,32 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual((call['engine'], call['plan']['model_id'], call['plan']['effort']), ('codex','codex:gpt-luna','high'))
         self.assertEqual(self.saved()['nodes'][1]['model_id'], 'codex:gpt-luna')
 
+    def test_parallel_writer_works_in_its_own_worktree_and_is_merged(self):
+        import subprocess
+        import maestro_worktree as WT
+        repo = self.root / 'repo'; (repo / 'docs').mkdir(parents=True)
+        (repo / 'docs' / 'a.md').write_text('a')
+        for args in (['init', '-q', '-b', 'main'], ['add', '-A'], ['commit', '-qm', 'base']):
+            subprocess.run(['git', '-C', str(repo), *WT.IDENT, *args], check=True, capture_output=True)
+        self.graph = {'nodes': [node('docs', engine='codex', read_only=False, repo=str(repo), write_paths=['docs']),
+                                node('pub', ['docs'], engine='codex', read_only=False)]}
+        seen = {}
+        base = self.execute
+        def execute(engine, prompt, instruction, cwd, images, plan, folder_id, job):
+            if job['node_id'] == 'docs':
+                seen.update(cwd=cwd, prompt=prompt)
+                pathlib.Path(cwd, 'docs', 'VISAO.md').write_text('visão')
+            return base(engine, prompt, instruction, cwd, images, plan, folder_id, job)
+        self.web.execute_agent_turn = execute
+        with patch.object(WT, 'ROOT', self.root / 'wt'):
+            result = self.run_turn()
+        self.assertEqual(result['rc'], 0)
+        self.assertTrue(seen['cwd'].startswith(str(self.root / 'wt')))
+        self.assertIn('[ESCRITA EM PARALELO]', seen['prompt'])
+        self.assertEqual((repo / 'docs' / 'VISAO.md').read_text(), 'visão')
+        self.assertFalse(pathlib.Path(seen['cwd']).exists())
+        self.assertIn('[Integração do Maestro] Integrado', self.saved()['nodes'][0]['result']['text'])
+
     def test_flex_turn_keeps_codex_even_above_the_ceiling(self):
         self.plan['quotas'] = {'codex': {'seven_day_pct': 99, 'seven_day_reset': time.time()+86400}}
         self.plan['flex'] = True

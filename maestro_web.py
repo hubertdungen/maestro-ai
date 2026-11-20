@@ -1013,7 +1013,11 @@ def get_job_snapshot(chat_id: str) -> dict | None:
                 snap['progress_events'] = copy.deepcopy(recent.get('progress_events') or [])
                 snap['activity_age_s'] = round(max(0, time.time() - recent['activity_ts']), 1) if recent.get('activity_ts') else None
                 snap['idle_s'] = round(max(0, time.time() - recent.get('last_output_ts', recent.get('t0', time.time()))), 1)
+                if snap['idle_s'] > 120 and recent.get('proc') is not None:
+                    snap['running_cmd'] = running_command(recent['proc'].pid)
         proc = j.get("proc")
+        if proc is not None and snap.get('idle_s', 0) > 120 and 'running_cmd' not in snap:
+            snap['running_cmd'] = running_command(proc.pid)
     # CPU acumulada do subprocesso: mostra que ele está vivo mesmo sem output
     if proc is not None and proc.poll() is None:
         try:
@@ -1023,6 +1027,36 @@ def get_job_snapshot(chat_id: str) -> dict | None:
         except Exception:
             pass
     return snap
+
+
+_QUIET = {"bash", "sh", "dash", "zsh", "timeout", "env", "nice", "tail", "tee", "cat", "stdbuf", "xargs"}
+
+
+def running_command(pid) -> str:
+    """O que um agente calado está a fazer: a cadeia de comandos descendentes («python3 tools/x.py → ssh desktop …»).
+
+    Lê /proc; sem custos de modelo. Os intérpretes de shell e utilitários de canalização ficam de fora."""
+    kids: dict[int, list[int]] = {}
+    for d in os.listdir("/proc"):
+        if d.isdigit():
+            try:
+                with open(f"/proc/{d}/stat", "rb") as fh:
+                    ppid = int(fh.read().rsplit(b")", 1)[1].split()[1])
+                kids.setdefault(ppid, []).append(int(d))
+            except (OSError, ValueError, IndexError):
+                continue
+    chain, cur = [], int(pid)
+    while kids.get(cur):
+        cur = max(kids[cur])  # o filho mais recente
+        try:
+            with open(f"/proc/{cur}/cmdline", "rb") as fh:
+                argv = [a.decode(errors="replace") for a in fh.read().split(b"\0") if a]
+        except OSError:
+            break
+        if argv and os.path.basename(argv[0]) not in _QUIET:
+            args = [a for a in argv[1:] if not a.startswith("-") and "=" not in a][:4]
+            chain.append(" ".join([os.path.basename(argv[0])] + args)[:90])
+    return " → ".join(chain[-3:])[:240]
 
 
 def stop_chat_job(chat_id: str, reason: str = "Interrompido pelo utilizador") -> bool:
