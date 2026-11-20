@@ -6,6 +6,7 @@ import threading
 import time
 import uuid
 import unicodedata
+import maestro_model_policy as POLICY
 from contextlib import contextmanager
 
 
@@ -211,6 +212,50 @@ def essential_reserve(task, plan):
     return bool(incident and urgent and action and plan.get('dim_level', 2) >= 3)
 
 
+FLEX_PCT = 100 / 14  # margem acima do teto acumulado: meio dia de quota semanal
+
+
+def flex_ok(engine, task, plan, quotas):
+    """Flexibilidade pedida pelo Hubert (2026-11-20): passar o teto acumulado até FLEX_PCT
+    quando se justifica (trabalho complexo ou UE5, com o Claude também acima do ritmo).
+    O teto é cumulativo: o que se adianta hoje fica bloqueado nos dias seguintes até o teto o apanhar.
+    Cada uso fica em flex-history.jsonl (log_flex)."""
+    if family(engine) != 'codex':
+        return False
+    x = quotas.get('codex', {})
+    b = weekly_budget(x)
+    if b['pace_target_pct'] is None or x.get('seven_day_pct', 100) >= min(100, b['pace_target_pct'] + FLEX_PCT):
+        return False
+    if x.get('daily_used_pct', 0) >= 100 / 7 + FLEX_PCT:
+        return False
+    complex_work = plan.get('dim_level', 2) >= 3 or POLICY.touches_ue(task.get('text', ''))
+    return complex_work and not below_pace('claude', quotas)
+
+
+def log_flex(path, task, engine, quotas):
+    x = quotas.get('codex', {})
+    target = weekly_budget(x)['pace_target_pct']
+    row = dict(ts=time.time(), task_id=task.get('id'), chat_id=task.get('chat_id'), engine=engine,
+               used_pct=x.get('seven_day_pct'), target_pct=target, over_pct=round((x.get('seven_day_pct') or 0) - (target or 0), 2),
+               claude_7d_pct=quotas.get('claude', {}).get('seven_day_pct'), text=str(task.get('text', ''))[:120])
+    with open(path, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(row, ensure_ascii=False) + '\n')
+
+
+def flex_summary(path, days=7):
+    """Usos de flexibilidade nos últimos dias: (n.º de turnos, maior excesso em pontos)."""
+    since, n, worst = time.time() - days * 86400, 0, 0.0
+    try:
+        with open(path, encoding='utf-8') as f:
+            for line in f:
+                row = json.loads(line)
+                if row.get('ts', 0) >= since:
+                    n, worst = n + 1, max(worst, row.get('over_pct') or 0)
+    except (OSError, ValueError):
+        pass
+    return n, worst
+
+
 def below_pace(engine, quotas):
     group = family(engine)
     q = quotas.get('antigravity' if group == 'agy' else group, {})
@@ -287,7 +332,8 @@ def decide(task, plan, running):
     compatible = [e for e in regular if plan.get('dim_level', 2) < 3 or family(e) in capable]
     reserve = bool(paced and not compatible and essential_reserve(task, plan) and
                    weekly_budget(x)['pace_status'] != 'desconhecido')
-    available = regular + (paced if reserve else [])
+    flex = [] if reserve else [e for e in paced if flex_ok(e, task, plan, q)]
+    available = regular + (paced if reserve else flex)
     requested = task.get('engine', 'auto')
     failed = task.get('failed_engines') or []  # one entry per failed attempt
     tried_fam = {family(e) for e in failed}
@@ -326,7 +372,7 @@ def decide(task, plan, running):
     candidates = sorted(candidates, key=load)
     for engine in candidates:
         if runs.count(family(engine)) < MAX_RUNS_PER_ENGINE:
-            return engine, ('essential_reserve' if engine in paced else (('parallel' if independent_analysis(task) and not task.get('force') else 'parallel_write') if running else ('economy' if engine == 'deepseek' else 'ready')))
+            return engine, ('flex' if engine in flex else 'essential_reserve' if engine in paced else (('parallel' if independent_analysis(task) and not task.get('force') else 'parallel_write') if running else ('economy' if engine == 'deepseek' else 'ready')))
     return None, ('engine_busy' if candidates else 'daily_budget' if paced else 'quota')
 
 
