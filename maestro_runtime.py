@@ -15,6 +15,14 @@ class _LocalPlan(Exception):
     pass
 
 
+SYNTHESIS = ('És o Maestro, o orquestrador deste turno, a fechar o trabalho para o Hubert. Não executes nada nem alteres '
+             'ficheiros: usa só os resultados das subtarefas recebidos. Escreve em pt-PT, conciso: **Resultado** numa frase '
+             '(feito, parcial ou bloqueado, sem suavizar); **O que aconteceu**: uma linha por subtarefa com o agente que a fez '
+             'e o que entregou; **Provas**: PRs, commits, testes, capturas e ligações tal como vêm nos resultados; '
+             '**Por fazer**: achados da revisão ainda abertos, bloqueios e o próximo passo. Não inventes nem copies os '
+             'relatórios inteiros: ficam visíveis por baixo da tua síntese.')
+
+
 def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, job):
     started = time.time()
     efficiency_calls = []
@@ -295,6 +303,7 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
                             'Devolve um resultado final autónomo que inclua as conclusões anteriores ainda válidas.')
         return invoke(node['engine'], task_prompt, instruction, node['read_only'], node['id'], model_id=node.get('model_id'), effort=node.get('effort'), task_role=node.get('role'))
 
+    was_done = workflow.snapshot().get('status') == 'done'
     final = workflow.run(execute, stopped=stopped, on_update=publish)
     # Review findings are the maker's work list inside this same turn. A read-only
     # verdict (often without shell) must not be the delivery of unfinished work.
@@ -311,13 +320,26 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
             **{k: maker[k] for k in ('model_id', 'effort') if maker.get(k)}))
         web._push_job_step(job, 'Revisão com achados: de volta ao implementador, no mesmo turno.')
         final = workflow.run(execute, stopped=stopped, on_update=publish)
+    # The closing word is the orchestrator's: what happened, by whom, result, proof, what is left.
+    if (final['status'] == 'done' and len(final['nodes']) > 1 and not was_done and not stopped() and readonly_engines
+            and not any(n['id'] == 'sintese' for n in final['nodes'])):
+        pref = ('sonnet', 'haiku', 'opus', 'fable', 'codex')
+        writer = next((e for p in pref for e in readonly_engines if e == p or e.startswith(p) or e.endswith('-' + p)), readonly_engines[0])
+        workflow.append(dict(id='sintese', title='Síntese do Maestro', instruction=SYNTHESIS, engine=writer, read_only=True,
+                             role='synthesis', depends_on=[n['id'] for n in final['nodes']]))
+        web._push_job_step(job, 'Maestro a fechar o turno: síntese do que aconteceu.')
+        final = workflow.run(execute, stopped=stopped, on_update=publish)
     publish(final)
     parts = []
-    predecessors = {dep for n in final['nodes'] for dep in n['depends_on']}
+    predecessors = {dep for n in final['nodes'] if n['id'] != 'sintese' for dep in n['depends_on']}
     displayed = [n for n in final['nodes'] if n['id'] not in predecessors] if final['status'] == 'done' else final['nodes']
+    displayed.sort(key=lambda n: n['id'] != 'sintese')  # the orchestrator speaks first, the agents' reports follow
     for node in displayed:
         result = node.get('result') or {}
         if result.get('text'):
+            if node['id'] == 'sintese':
+                parts.append(result['text'])
+                continue
             status_note = ' — ' + node['status'] if node['status'] != 'done' else ''
             parts.append(f"**{node['title']} · {result.get('agent_used', node['engine'])}{status_note}**\n\n{result['text']}")
         elif node.get('error'):
