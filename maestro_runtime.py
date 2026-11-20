@@ -263,6 +263,18 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
                 id='entrega', title='Implementar, validar e entregar', engine=preferred, read_only=False, role='implementation',
                 depends_on=[n['id'] for n in proposal['nodes'] if n['id'] not in successors],
                 instruction='Executa o pedido original do Hubert usando a pesquisa recebida. ' + QAGATE.FINISH))
+        # Um modelo escolhido para o turno vale para todos os nós que o aceitam: o planeador
+        # escolhia o seu (ex.: haiku/opus num turno fixado em codex:gpt-6.2-sol ou agy:…).
+        pinned = (None if plan.get('automatic_model') else
+                  next((e for e in entries if e['id'] == plan.get('model_id') and e.get('available', True)), None))
+        if pinned and pinned['engine'] in allowed:
+            for node in proposal['nodes']:
+                if node['read_only'] and not (pinned.get('read_only_enforced') and pinned['engine'] in readonly_engines):
+                    continue
+                node.update(engine=pinned['engine'], model_id=pinned['id'])
+                node.pop('effort', None)
+                if plan.get('effort') in (pinned.get('efforts') or ()):
+                    node['effort'] = plan['effort']
         workflow = WF.Workflow(state_path, proposal, objective=user_text)
     with web.JOBS_LOCK:
         job['workflow_runner'] = workflow

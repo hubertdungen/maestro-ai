@@ -1365,7 +1365,12 @@ function esc(s) {
   function hasPendingWork(m) {
     if (m.role !== 'assistant') return false;
     var msgs = (state.currentChat || {}).messages || [];
-    if (msgs.indexOf(m) !== -1 && msgs.slice(msgs.indexOf(m) + 1).some(function(x){ return x.role === 'assistant'; })) return false; // só a última resposta
+    // Só a última resposta, e só se ninguém pediu nada depois (ex.: uma ordem de fecho já em fila ou a correr).
+    // O pedido que este próprio botão enviou não conta: mantém «Implementação pedida».
+    var marker = '[' + suggestionKey(m) + ']', other = function(t){ return String((t && t.text) || '').indexOf(marker) === -1; };
+    if (msgs.indexOf(m) !== -1 && msgs.slice(msgs.indexOf(m) + 1).some(function(x){ return x.role === 'assistant' || (x.role === 'user' && other(x)); })) return false;
+    var cid = (state.currentChat || {}).id;
+    if ((state.messageQueue || []).some(function(t){ return t && (!t.chat_id || t.chat_id === cid) && other(t) && /^(queued|running)$/.test(t.status || ''); })) return false;
     var text = String(m.text || '').replace(/```[\s\S]*?```/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     return PENDING_RE.test(text);
   }
