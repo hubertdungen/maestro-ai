@@ -70,3 +70,7 @@ class UnrealEngineRuleTests(unittest.TestCase):
         plan = WF.validate_plan({'nodes': [node('scout', engine='deepseek', role='scout', instruction='inventário do Unreal')]}, ['deepseek'])
         self.assertEqual(plan['nodes'][0]['engine'], 'deepseek')  # sem alternativa, não bloqueia a leitura
 
+    def test_fallback_plan_scout_for_ue_has_tools(self):
+        plan = WF.default_plan('PARIDADE P1 no Unreal Engine 5', ['deepseek', 'haiku', 'opus', 'sonnet'], preferred='opus')
+        self.assertEqual(next(n for n in plan['nodes'] if n['id'] == 'scout')['engine'], 'haiku')
+

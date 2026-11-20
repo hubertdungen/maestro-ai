@@ -136,9 +136,10 @@ def default_plan(objective, engines, preferred=None):
     if not engines:
         raise ValueError('Nenhum motor disponível para planear.')
     main = preferred if preferred in engines else engines[0]
+    scout = next((e for e in ('deepseek', 'agy', 'haiku', 'claude-sonnet') if e in engines), engines[0])
     if POLICY.touches_ue(objective):
         main = POLICY.ue_engine(main, engines)
-    scout = next((e for e in ('deepseek', 'agy', 'haiku', 'claude-sonnet') if e in engines), engines[0])
+        scout = POLICY.ue_reader(scout, engines)
     reviewer = next((e for e in engines if e != main), main)
     return validate_plan({'reason': 'Pesquisa → implementação → revisão; espera local sem chamadas ao modelo.', 'nodes': [
         {'id': 'scout', 'title': 'Investigar e propor alterações', 'role': 'scout', 'engine': scout, 'read_only': True,
