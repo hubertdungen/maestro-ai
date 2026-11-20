@@ -8,6 +8,8 @@ const assert = require('assert');
 (async () => {
   const b = await chromium.launch(); const p = await b.newPage();
   await p.route(/\.(png|jpe?g|gif|webp|svg)(\?|$)/, r => r.abort());
+  // APP_JS=ui/app.js testa a versão local antes do deploy.
+  if (process.env.APP_JS) await p.route(/\/ui\/app\.js/, r => r.fulfill({contentType:'application/javascript', body:require('fs').readFileSync(process.env.APP_JS, 'utf8')}));
   const chat = {id:'chat-t1', title:'T', project:'nas', engine:'auto', archived:false, messages:[
     {role:'user', text:'faz isto', ts:1},
     {role:'assistant', text:'Feito parte. Porta de qualidade: reprovada. O que falta: commit.', ts:2, turn_id:'t-A'},
@@ -22,8 +24,12 @@ const assert = require('assert');
   await p.waitForTimeout(1500);
   const btns = () => p.$$eval('button', bs => bs.filter(b => /Continuar trabalho|Implementação pedida/.test(b.textContent) && b.textContent.length<40).map(b => b.textContent));
   const a = await btns(); console.log('antes (última sem pendência):', a); assert.deepStrictEqual(a, []);
-  chat.messages.pop(); await p.reload(); await p.waitForTimeout(1500); await p.getByText('ZZTESTE').first().click(); await p.waitForTimeout(1500);
+  chat.messages.splice(2); await p.reload(); await p.waitForTimeout(1500); await p.getByText('ZZTESTE').first().click(); await p.waitForTimeout(1500);
   const c = await btns(); console.log('última com pendência:', c); assert.deepStrictEqual(c, ['▶ Continuar trabalho']);
+  // Já se pediu outra coisa depois (ex.: uma ordem de fecho a correr): o botão sai, para não relançar trabalho fechado.
+  chat.messages.push({role:'user', text:'ordem de fecho', ts:3}); await p.reload(); await p.waitForTimeout(1500); await p.getByText('ZZTESTE').first().click(); await p.waitForTimeout(1500);
+  const d = await btns(); console.log('com pedido posterior:', d); assert.deepStrictEqual(d, []);
+  chat.messages.pop(); await p.reload(); await p.waitForTimeout(1500); await p.getByText('ZZTESTE').first().click(); await p.waitForTimeout(1500);
   const bt = p.locator('button', {hasText:'Continuar trabalho'}).first();
   await bt.click(); await p.waitForTimeout(1000);
   await bt.click({force:true}).catch(()=>{}); await p.waitForTimeout(500);

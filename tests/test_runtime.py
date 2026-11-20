@@ -158,8 +158,16 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(result['rc'],0)
         self.assertEqual([c['node'] for c in self.calls],['write','review','sintese'])
 
+    def test_pinned_turn_model_overrides_planner_choice_on_writing_nodes(self):
+        self.plan.update(model_id='codex:gpt-luna', effort='high')
+        self.graph = {'nodes':[node('scout',engine='sonnet'), node('write',['scout'],engine='opus',read_only=False)]}
+        self.run_turn()
+        call = next(c for c in self.calls if c['node']=='write')
+        self.assertEqual((call['engine'], call['plan']['model_id'], call['plan']['effort']), ('codex','codex:gpt-luna','high'))
+        self.assertEqual(self.saved()['nodes'][1]['model_id'], 'codex:gpt-luna')
+
     def test_same_family_different_model_does_not_inherit_wrong_selection(self):
-        self.plan.update(exec_engine='claude-sonnet',model_id='sonnet:sonnet',effort='high')
+        self.plan.update(exec_engine='claude-sonnet',model_id='sonnet:sonnet',effort='high',automatic_model=True)
         self.graph = {'nodes':[node('write',engine='opus',read_only=False)]}
         self.run_turn()
         call = next(c for c in self.calls if c['node']=='write')
