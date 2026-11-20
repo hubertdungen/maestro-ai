@@ -166,7 +166,8 @@ def catalog(quotas=None, refresh=False):
             q = quotas.get(family, {})
             blocked = ((family == 'codex' and (q.get('limit_reached') or q.get('five_hour_est_pct', 0) >= 92 or q.get('seven_day_pct', 0) >= 100)) or
                        (family == 'claude' and (q.get('limited') or q.get('five_hour_pct', 0) >= 90 or q.get('seven_day_pct', 0) >= 100)) or
-                       (family == 'antigravity' and q.get('limited')) or
+                       (family == 'antigravity' and (q.get('limited') or (q.get('models_3p_limited') and
+                                                     e['id'].split(':', 1)[-1].startswith(('claude', 'gpt'))))) or
                        (family == 'deepseek' and q.get('available') is False))
             if family == 'deepseek' and e.get('transport') != 'deepseek-api' and q.get('budget', {}).get('cli_allowed') is False:
                 blocked = True
