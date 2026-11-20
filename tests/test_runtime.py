@@ -173,6 +173,15 @@ class RuntimeTests(unittest.TestCase):
         self.run_turn()
         self.assertEqual(next(c for c in self.calls if c['node']=='write')['engine'], 'codex')
 
+    def test_principal_antigravity_plans_with_orchestrator_model(self):
+        self.entries += [entry('agy','gemini-3.8-flash',False), entry('agy','gemini-pro-orchestrator-neon',False)]
+        self.plan['available_engines'].append('agy')
+        self.run_turn()
+        first = self.calls[0]
+        self.assertTrue(first['plan']['no_tools'])
+        self.assertEqual((first['engine'], first['plan']['model_id']), ('agy', 'agy:gemini-pro-orchestrator-neon'))
+        self.assertEqual(self.saved()['planning_source'], 'coordinator')
+
     def test_same_family_different_model_does_not_inherit_wrong_selection(self):
         self.plan.update(exec_engine='claude-sonnet',model_id='sonnet:sonnet',effort='high',automatic_model=True)
         self.graph = {'nodes':[node('write',engine='opus',read_only=False)]}

@@ -69,7 +69,9 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
         chosen = canonical(chosen)
         if chosen not in allowed:
             raise RuntimeError('Motor indisponível para esta tarefa: ' + str(chosen))
-        if read_only and chosen not in readonly_engines:
+        # O Antigravity a planear corre em --mode plan (não escreve), sem precisar de leitura restrita.
+        agy_plan = no_tools and chosen == 'agy'
+        if read_only and chosen not in readonly_engines and not agy_plan:
             if not readonly_engines:
                 raise RuntimeError('Nenhum motor disponível com ferramentas de leitura restritas')
             chosen = next((e for e in readonly_engines if e == preferred), readonly_engines[0])
@@ -97,7 +99,7 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
             selected = MODELS.resolve(model_id, effort, quotas=plan.get('quotas'))
             if selected['engine'] != chosen:
                 raise ValueError('Modelo não corresponde ao motor da subtarefa')
-            if read_only and not selected.get('read_only_enforced'):
+            if read_only and not selected.get('read_only_enforced') and not agy_plan:
                 raise ValueError('Modelo sem ferramentas de leitura disponíveis')
             if not read_only and selected.get('transport') == 'deepseek-api':
                 raise ValueError('Este adaptador de modelo só permite análise de leitura')
@@ -196,6 +198,11 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
         local_reason = None if WF.mixed_request(user_text) else E.local_plan_reason(user_text, plan, readonly_engines, efficiency_path)
         planning_candidates = MODELS.POLICY.ranked(
             [e for e in entries if e['engine'] in readonly_engines], 'planning', True, bool(images))
+        if 'agy' in allowed and not images:
+            # O Maestro principal (Antigravity) planeia, com o modelo de orquestração quando existe.
+            principal = MODELS.POLICY.ranked([e for e in entries if e['engine'] == 'agy'], 'implementation')
+            principal.sort(key=lambda e: 'orchestrator' not in e.get('model', ''))
+            planning_candidates = principal[:1] + planning_candidates
         planning_choice = planning_candidates[0] if planning_candidates else None
 
         try:

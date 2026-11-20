@@ -1335,9 +1335,11 @@ def _execute_agent_turn(engine_choice: str, full_prompt: str, raw_user_text: str
                 with JOBS_LOCK:
                     job["agent_label"] = agent_label
             agy_bin = str(M.LOCAL_BIN / "agy")
+            # Leitura/planeamento: --mode plan não escreve nem pede permissões.
+            readonly_agy = bool(plan.get("read_only") or plan.get("no_tools"))
             cmd = [
                 agy_bin,
-                "--dangerously-skip-permissions",
+                *(["--mode", "plan"] if readonly_agy else ["--dangerously-skip-permissions"]),
                 "--output-format", "stream-json",
                 "--add-dir", "/srv/cloud4tb/WORK/DEVELOPMENT",
                 "--add-dir", "/srv/appdata/0_SERVER/2_CONFIG",
