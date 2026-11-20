@@ -938,12 +938,13 @@ def classify_task(prompt: str, cwd: str | None = None, extra_images: list[str] |
     ds_q = get_deepseek_balance()
     images = extract_images(prompt, extra_images)
 
-    if any(k in p_low or k in cwd_low for k in ("polistrat", "unity", "mono", "prefab", "shader", "csharp", "c#")):
-        domain = "Polistrat (Unity / C#)"
-        domain_key = "unity"
-    elif any(k in p_low or k in cwd_low for k in ("spacebourne", "modding", "unreal", "uasset", "pak", "utoc", "ue4ss", "fmodel")):
+    # Unreal primeiro: «shader» ou «C++» num pedido de UE5 não o tornam Unity (Fragor, 2026-11-20).
+    if any(k in p_low or k in cwd_low for k in ("spacebourne", "modding", "unreal", "uasset", "uproject", "ue5", "ue 5", "pak", "utoc", "ue4ss", "fmodel")):
         domain = "Modding (SpaceBourne 2 / Unreal)"
         domain_key = "modding"
+    elif any(k in p_low or k in cwd_low for k in ("polistrat", "unity", "mono", "prefab", "shader", "csharp", "c#")):
+        domain = "Polistrat (Unity / C#)"
+        domain_key = "unity"
     elif any(k in p_low or k in cwd_low for k in ("dungenlabs", "portfolio", "webfolio", "grimorio", "lectoria", "blogartifex", "css", "html", "layout", "design")):
         domain = "Web & Design (DungenLabs / Portfólio)"
         domain_key = "web"

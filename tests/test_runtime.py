@@ -70,7 +70,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn('Evidence review',result['text'])
         self.assertNotIn('Evidence scout',result['text'])
         self.assertNotIn('Evidence write',result['text'])
-        self.assertEqual([c['node'] for c in self.calls],[None,'scout','write','review'])
+        self.assertEqual([c['node'] for c in self.calls],[None,'scout','write','review','sintese'])
         self.assertIn('pasta='+str(self.root),self.calls[0]['prompt'])
         self.assertIn('domínio=NAS',self.calls[0]['prompt'])
         self.assertIn('Evidence scout',self.calls[2]['prompt'])
@@ -135,7 +135,7 @@ class RuntimeTests(unittest.TestCase):
         nodes = {n['id']: n for n in self.saved()['nodes']}
         self.assertEqual(nodes['scout']['engine'], 'codex')  # finished work keeps its history
         self.assertEqual((nodes['write']['engine'], nodes['write']['status']), ('sonnet', 'done'))
-        self.assertEqual({c['node']: c['engine'] for c in self.calls}, {'write': 'sonnet', 'review': 'sonnet'})
+        self.assertEqual({c['node']: c['engine'] for c in self.calls}, {'write': 'sonnet', 'review': 'sonnet', 'sintese': 'sonnet'})
 
     def test_resume_failed_path_keeps_completed_research_and_failed_output(self):
         original = self.web.execute_agent_turn
@@ -156,7 +156,7 @@ class RuntimeTests(unittest.TestCase):
         self.job = dict(chat_id='chat',status='running',plan={})
         result = self.run_turn()
         self.assertEqual(result['rc'],0)
-        self.assertEqual([c['node'] for c in self.calls],['write','review'])
+        self.assertEqual([c['node'] for c in self.calls],['write','review','sintese'])
 
     def test_same_family_different_model_does_not_inherit_wrong_selection(self):
         self.plan.update(exec_engine='claude-sonnet',model_id='sonnet:sonnet',effort='high')
@@ -174,8 +174,8 @@ class RuntimeTests(unittest.TestCase):
             return dict(result, text=replies.get(job['node_id'], result['text']))
         self.web.execute_agent_turn = execute
         result = self.run_turn()
-        self.assertEqual([c['node'] for c in self.calls], [None, 'scout', 'write', 'review', 'entrega'])
-        closing = self.calls[-1]
+        self.assertEqual([c['node'] for c in self.calls], [None, 'scout', 'write', 'review', 'entrega', 'sintese'])
+        closing = self.calls[-2]
         self.assertFalse(closing['plan']['read_only'])
         self.assertIn('NÃO APROVADO', closing['prompt'])       # the findings are its work list
         self.assertIn('CONTRATO DE ENTREGA', closing['prompt'])
@@ -183,20 +183,20 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(result['rc'], 0)
         self.assertIn('Evidence entrega', result['text'])
         self.assertNotIn('NÃO APROVADO', result['text'])
-        self.assertEqual(self.saved()['nodes'][-1]['id'], 'entrega')
+        self.assertEqual([n['id'] for n in self.saved()['nodes']][-2:], ['entrega', 'sintese'])
         self.calls.clear()                                       # resume: finished plan, no new model call
         self.assertIn('Evidence entrega', self.run_turn()['text'])
         self.assertEqual(self.calls, [])
 
     def test_clean_review_is_delivered_without_an_extra_pass(self):
         self.run_turn()
-        self.assertEqual([c['node'] for c in self.calls], [None, 'scout', 'write', 'review'])
+        self.assertEqual([c['node'] for c in self.calls], [None, 'scout', 'write', 'review', 'sintese'])
 
     def test_change_request_never_ends_in_a_read_only_plan(self):
         self.graph = {'nodes': [node('scout')]}
         result = self.run_turn('Implementa e valida as licenças')
-        self.assertEqual([c['node'] for c in self.calls], [None, 'scout', 'entrega'])
-        self.assertFalse(self.calls[-1]['plan']['read_only'])
+        self.assertEqual([c['node'] for c in self.calls], [None, 'scout', 'entrega', 'sintese'])
+        self.assertFalse(self.calls[-2]['plan']['read_only'])
         self.assertIn('Evidence entrega', result['text'])
 
     def test_deepseek_without_daily_budget_is_not_planned(self):
@@ -261,8 +261,24 @@ class RuntimeTests(unittest.TestCase):
                 item['read_only_enforced'] = True
         result = self.run_turn()
         self.assertEqual(result['rc'],0)
-        self.assertEqual([c['engine'] for c in self.calls],['deepseek','deepseek','codex','deepseek'])
-        self.assertEqual([c['plan']['read_only'] for c in self.calls],[True,True,False,True])
+        self.assertEqual([c['engine'] for c in self.calls],['deepseek','deepseek','codex','deepseek','deepseek'])
+        self.assertEqual([c['plan']['read_only'] for c in self.calls],[True,True,False,True,True])
+
+    def test_orchestrator_synthesis_speaks_first_and_reports_follow(self):
+        result = self.run_turn()
+        synth = self.calls[-1]
+        self.assertEqual(synth['node'], 'sintese')
+        self.assertTrue(synth['plan']['read_only'])
+        self.assertIn('És o Maestro', synth['prompt'])
+        for done in ('Evidence scout', 'Evidence write', 'Evidence review'):
+            self.assertIn(done, synth['prompt'])           # it sees every agent's result
+        self.assertTrue(result['text'].startswith('Evidence sintese'))
+        self.assertIn('Evidence review', result['text'])   # the final report stays visible below
+        self.assertNotIn('Evidence scout', result['text'])
+        self.calls.clear()
+        self.job = dict(chat_id='chat', status='running', plan={})
+        self.assertTrue(self.run_turn()['text'].startswith('Evidence sintese'))
+        self.assertEqual(self.calls, [])                   # finished turn: no new synthesis on resume
 
 
 if __name__=='__main__':unittest.main()
