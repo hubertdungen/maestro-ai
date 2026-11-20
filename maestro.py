@@ -581,6 +581,9 @@ def _agy_signal_from_logs(max_age_s: float = 8 * 86400) -> dict | None:
                 "duration_s": dur,
                 "raw": m.group(0).strip(),
                 "log_file": p.name,
+                # Modelo pedido nesse arranque do CLI: um 429 num Claude/GPT (quota 3P)
+                # não esgota o Gemini.
+                "model": (re.findall(r"Resolving model (\S+)", text[:m.start()]) or [None])[-1],
             }))
         if candidates:
             reals = [c for c in candidates if c[0]]
@@ -635,7 +638,8 @@ def get_antigravity_status(force_refresh: bool = False) -> dict:
     if AGY_COOLDOWN_FILE.exists():
         try:
             cd = json.loads(AGY_COOLDOWN_FILE.read_text())
-            if float(cd.get("until") or 0) > time.time():
+            # cli_429 é recalculado do sinal a cada leitura (pode ser só da quota 3P).
+            if cd.get("source") != "cli_429" and float(cd.get("until") or 0) > time.time():
                 limited = True
                 reset_at = cd.get("until")
             else:
@@ -726,7 +730,16 @@ def get_antigravity_status(force_refresh: bool = False) -> dict:
     quota_note = ""
     quota_unknown = quota_data is None
 
-    if signal:
+    models_3p_limited = bool(signal and re.match(r"(claude|gpt)", str(signal.get("model") or "")))
+    if models_3p_limited:
+        m3p_5h_used_pct = m3p_7d_used_pct = 100.0
+        m3p_reset = dt.datetime.fromtimestamp(signal["reset_ts"], tz=UTC).isoformat()
+        quota_source = "cli_429_3p"
+        quota_note = (
+            f"Modelos Claude/GPT do Antigravity esgotados (429 em {signal['model']}) até "
+            f"{fmt_reset(signal['reset_ts'])}; o Gemini continua disponível."
+        )
+    elif signal:
         limited = True
         gemini_used_pct = 100.0
         reset_at = signal["reset_ts"]
@@ -788,6 +801,7 @@ def get_antigravity_status(force_refresh: bool = False) -> dict:
         "models_3p_5h_used_pct": m3p_5h_used_pct,
         "models_3p_7d_used_pct": m3p_7d_used_pct,
         "models_3p_reset_fmt": fmt_reset(m3p_reset) if m3p_reset else "janela livre",
+        "models_3p_limited": models_3p_limited,
         "quota_source": quota_source,
         "quota_note": quota_note,
         "quota_unknown": quota_unknown,
