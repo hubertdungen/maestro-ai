@@ -36,6 +36,16 @@ UTC = dt.timezone.utc
 
 MAESTRO_DIR = HOME / "scripts" / "maestro"
 STATE_DIR = HOME / ".local" / "state" / "maestro"
+
+
+def _flex_line():
+    """Flexibilidade acima do teto do Codex nos últimos 7 dias (histórico em flex-history.jsonl)."""
+    try:
+        import maestro_queue
+        n, worst = maestro_queue.flex_summary(STATE_DIR / "flex-history.jsonl")
+    except Exception:
+        return ""
+    return f" · Flex 7d: {n} turno(s), máx +{worst:.1f} pp" if n else " · Flex 7d: nenhum"
 RUN_DIR = HOME / ".local" / "run" / "maestro"
 HISTORY_LOG = STATE_DIR / "history.jsonl"
 SHARED_CONTEXT = STATE_DIR / "shared-context.md"
@@ -1436,6 +1446,7 @@ def print_dashboard(plan: dict | None = None, force_substitute: bool = False) ->
         f"5h: {x_color}{x['five_hour_est_pct']}%{C_RESET} (reset: {x.get('five_hour_reset_fmt') or fmt_reset(x['five_hour_reset'])}) · "
         f"Semanal 7d: {x.get('seven_day_pct', 0)}% · Modelo: {x['model']}"
         f" · Orçamento diário: {x.get('daily_budget_pct', 100/7):.1f}% · Teto acumulado: {x.get('pace_target_pct')}% · {x.get('pace_status', 'desconhecido')}"
+        + _flex_line()
     )
     print(
         f"  {C_BOLD}4. DeepSeek CLI (dsh){C_RESET}    : "

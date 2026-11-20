@@ -107,3 +107,38 @@ class BudgetTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FlexTests(unittest.TestCase):
+    """Flexibilidade: até meio dia acima do teto, só em trabalho complexo/UE5 com o Claude também acima do ritmo."""
+    def setUp(self):
+        p = patch.object(Q.time, 'time', return_value=NOW)
+        p.start(); self.addCleanup(p.stop)
+        self.task = dict(chat_id='x', text='Corrige o menu', engine='auto')
+
+    def p(self, used, **extra):
+        r = plan(**extra)
+        r['quotas']['codex'] = quota(used)
+        r['quotas']['claude'] = dict(seven_day_pct=15, pace_target_pct=11)
+        return r
+
+    def test_complex_work_just_over_the_ceiling_uses_flex(self):
+        self.assertEqual(Q.decide(self.task, self.p(30, dim_level=3), []), ('codex', 'flex'))
+        ue = dict(self.task, text='Compila no Unreal via ssh desktop')
+        self.assertEqual(Q.decide(ue, self.p(30), []), ('codex', 'flex'))
+
+    def test_simple_work_beyond_margin_or_claude_below_pace_does_not(self):
+        self.assertEqual(Q.decide(self.task, self.p(30), [])[1], 'economy')            # simples
+        self.assertEqual(Q.decide(self.task, self.p(37, dim_level=3), []), (None, 'daily_budget'))  # > meio dia
+        p = self.p(30, dim_level=3)
+        p['quotas']['claude']['seven_day_pct'] = 5                                     # Claude tem folga
+        self.assertNotEqual(Q.decide(self.task, p, []), ('codex', 'flex'))
+
+    def test_history_is_logged_and_summarised(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / 'flex-history.jsonl'
+            q = self.p(30)['quotas']
+            Q.log_flex(path, dict(id='t1', chat_id='x', text='UE'), 'codex', q)
+            n, worst = Q.flex_summary(path)
+            self.assertEqual(n, 1)
+            self.assertAlmostEqual(worst, round(30 - 200/7, 2))

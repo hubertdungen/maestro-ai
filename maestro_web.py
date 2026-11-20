@@ -1071,7 +1071,8 @@ def _execute_with_reserve(engine, prompt, text, cwd, images, plan, folder_id, jo
     if (quotas.get('codex') or {}).get('source') == 'wham_live':
         quotas['codex'] = M.get_codex_quota()
     reserve = bool(plan.get('essential_reserve') and Q.essential_reserve({'text': text}, plan))
-    entries = [e for e in entries if not Q.pace_blocked(e['engine'], quotas) or reserve]
+    entries = [e for e in entries if not Q.pace_blocked(e['engine'], quotas) or reserve
+               or (plan.get('flex') and Q.family(e['engine']) == 'codex')]
     if plan.get('model_id') and not any(e['id'] == plan['model_id'] for e in entries):
         if pinned:
             raise ValueError('Modelo reservado pelo orçamento diário; aguarda quota ou escolhe alternativa compatível.')
@@ -2037,7 +2038,9 @@ WHY = {
     'parallel': ('🔀', 'escolhi {engine} em paralelo: análise independente'),
     'parallel_write': ('🔀', 'escolhi {engine} em paralelo: ficheiros sem sobreposição'),
     'essential_reserve': ('🛟', 'escolhi {engine} com a reserva: trabalho essencial, quota apertada'),
+    'flex': ('🧮', 'escolhi {engine} acima do teto diário (margem de meio dia): trabalho complexo, compensa-se nos dias seguintes'),
 }
+FLEX_HISTORY = M.STATE_DIR / "flex-history.jsonl"
 
 
 def think(key, reason, task, engine=None):
@@ -2182,12 +2185,17 @@ def schedule_turns_once():
                 if current['status'] != 'queued' or (load_chat(cid) or {}).get('archived'):
                     continue
                 TURN_QUEUE.update(task['id'], status='running', reason=reason, blocked_by=None, waiting_on=None, conflict=None, write_paths=task['write_paths'], assigned_engine=engine, estimated_input_tokens=task['estimated_input_tokens'])
+                if reason == 'flex':
+                    try:
+                        Q.log_flex(FLEX_HISTORY, task, engine, plan.get('quotas', {}))
+                    except OSError:
+                        pass
             label = M.ENGINE_DISPLAY.get(engine, engine)
             think('y', reason, task, engine)
             if engine == 'deepseek' and Q.independent_analysis(task):
                 plan['read_only'] = True
             plan.update(model_id=task.get('model_id'), effort=task.get('effort'),
-                        essential_reserve=reason == 'essential_reserve')
+                        essential_reserve=reason == 'essential_reserve', flex=reason == 'flex')
             if reason == 'parallel_write':
                 # The scheduler already established independence (other project, disjoint files, Sentinel or Avançar).
                 # Without its own scope the turn was admitted and then parked behind the shared home folder.

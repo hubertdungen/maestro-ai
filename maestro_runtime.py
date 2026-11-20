@@ -34,7 +34,8 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
     # The catalog distinguishes transport support from quota availability.
     entries = MODELS.catalog(quotas=plan.get('quotas'))['models']
     allowed = list(dict.fromkeys(e['engine'] for e in entries if e.get('available')))
-    allowed = [e for e in allowed if not web.Q.pace_blocked(e, plan.get('quotas', {})) or plan.get('essential_reserve')]
+    allowed = [e for e in allowed if not web.Q.pace_blocked(e, plan.get('quotas', {})) or plan.get('essential_reserve')
+               or (plan.get('flex') and web.Q.family(e) == 'codex')]
     allowed = [e for e in allowed if e in plan.get('available_engines', []) or web.Q.family(e) in
                {web.Q.family(x) for x in plan.get('available_engines', [])}]
     deepseek_budget = ((plan.get('quotas') or {}).get('deepseek') or {}).get('budget') or {}

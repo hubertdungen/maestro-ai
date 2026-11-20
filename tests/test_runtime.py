@@ -166,6 +166,13 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual((call['engine'], call['plan']['model_id'], call['plan']['effort']), ('codex','codex:gpt-luna','high'))
         self.assertEqual(self.saved()['nodes'][1]['model_id'], 'codex:gpt-luna')
 
+    def test_flex_turn_keeps_codex_even_above_the_ceiling(self):
+        self.plan['quotas'] = {'codex': {'seven_day_pct': 99, 'seven_day_reset': time.time()+86400}}
+        self.plan['flex'] = True
+        self.graph = {'nodes':[node('write',read_only=False)]}
+        self.run_turn()
+        self.assertEqual(next(c for c in self.calls if c['node']=='write')['engine'], 'codex')
+
     def test_same_family_different_model_does_not_inherit_wrong_selection(self):
         self.plan.update(exec_engine='claude-sonnet',model_id='sonnet:sonnet',effort='high',automatic_model=True)
         self.graph = {'nodes':[node('write',engine='opus',read_only=False)]}
