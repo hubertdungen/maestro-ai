@@ -46,7 +46,7 @@ def needs_workflow(text, plan=None):
     value = ''.join(c for c in unicodedata.normalize('NFD', text.lower()) if not unicodedata.combining(c))
     broad = re.search(r'\b(melhora\w*|improve\w*|refactor\w*|refatora\w*)\b', value)
     inspect = re.search(r'\b(verifica\w*|analisa\w*|investiga\w*|review|audit\w*|ve|check|inspect\w*)\b', value)
-    explicit = re.search(r'\b(multi.agente|multi.agent|subtarefas|subtasks|divide\w*.*tarefas|deleg\w*)\b', value)
+    explicit = re.search(r'\b(multi.agente|multi.agent|subtarefas|subtasks|divide\w*.*tarefas|deleg\w*|divisao do trabalho|write_paths|escritor\w* em paralelo|parallel writers?)\b', value)
     return bool(mixed_request(text) or explicit or (broad and inspect) or (plan.get('dim_level', 0) >= 3 and plan.get('multi_agent')))
 
 
