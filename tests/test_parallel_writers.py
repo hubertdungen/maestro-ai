@@ -121,6 +121,11 @@ class WorktreeTests(unittest.TestCase):
             self.assertTrue(git(r.repo, 'branch', '--list', wt['branch']))
 
 
+    def test_git_sees_user_bin_for_lfs(self):
+        # git-lfs vive em ~/.local/bin, fora do PATH do serviço.
+        self.assertTrue(WT.ENV['PATH'].startswith(str(pathlib.Path.home() / '.local' / 'bin')))
+
+
 class RunningCommandTests(unittest.TestCase):
     def test_shows_descendant_command_without_shells(self):
         import maestro_web as W

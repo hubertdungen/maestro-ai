@@ -6,6 +6,7 @@ principal. Um conflito nunca se resolve sozinho: o merge é abortado e o ramo fi
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import shutil
@@ -14,12 +15,15 @@ import threading
 
 ROOT = pathlib.Path.home() / '.local' / 'state' / 'maestro' / 'worktrees'
 IDENT = ['-c', 'user.name=Maestro AI', '-c', 'user.email=hubert@pavilion-nas']
+# O serviço corre com o PATH do systemd, sem ~/.local/bin, onde está o git-lfs: sem ele o
+# `worktree add` de um repo com LFS (FragorUnreal) falha no filtro e no hook post-checkout.
+ENV = {**os.environ, 'PATH': f"{pathlib.Path.home() / '.local' / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}"}
 _LOCKS: dict[str, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
 
 
 def _git(repo, *args, timeout=120):
-    r = subprocess.run(['git', '-C', str(repo), *IDENT, *args], capture_output=True, text=True, timeout=timeout)
+    r = subprocess.run(['git', '-C', str(repo), *IDENT, *args], capture_output=True, env=ENV, text=True, timeout=timeout)
     if r.returncode:
         raise RuntimeError(f"git {' '.join(args[:2])}: {(r.stderr or r.stdout).strip()[-400:]}")
     return r.stdout.strip()
@@ -81,7 +85,7 @@ def integrate(repo, wt, scope, title):
         try:
             _git(repo, 'merge', '--no-ff', '--no-edit', '-m', f'Maestro: integra {title[:100]}', branch)
         except RuntimeError as exc:
-            subprocess.run(['git', '-C', str(repo), 'merge', '--abort'], capture_output=True, timeout=60)
+            subprocess.run(['git', '-C', str(repo), 'merge', '--abort'], capture_output=True, env=ENV, timeout=60)
             return False, f'Conflito ao integrar ({exc}). O merge foi abortado; o trabalho ficou no ramo {branch} ({path}).'
         head = _git(repo, 'rev-parse', '--short', 'HEAD')
     close(repo, wt)
@@ -90,6 +94,6 @@ def integrate(repo, wt, scope, title):
 
 def close(repo, wt):
     with _lock(repo):
-        subprocess.run(['git', '-C', str(repo), 'worktree', 'remove', '--force', wt['path']], capture_output=True, timeout=60)
-        subprocess.run(['git', '-C', str(repo), 'branch', '-D', wt['branch']], capture_output=True, timeout=60)
+        subprocess.run(['git', '-C', str(repo), 'worktree', 'remove', '--force', wt['path']], capture_output=True, env=ENV, timeout=60)
+        subprocess.run(['git', '-C', str(repo), 'branch', '-D', wt['branch']], capture_output=True, env=ENV, timeout=60)
     shutil.rmtree(wt['path'], ignore_errors=True)
