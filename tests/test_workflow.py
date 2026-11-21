@@ -192,6 +192,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(W.needs_workflow('Tira o ícone do placeholder', {'dim_level': 2}))
         self.assertTrue(W.needs_workflow('Vê o que dá para melhorar no maestro e melhora'))
         self.assertTrue(W.needs_workflow('Divide por subtarefas'))
+        # Uma ordem que já traz a divisão por agentes não pode cair num turno de um só agente.
+        self.assertTrue(W.needs_workflow('Entregar: 1. cenas.\n\nDivisão do trabalho (escritores em paralelo):\n- C++ com `write_paths` em Source/'))
+        self.assertFalse(W.needs_workflow('Corre os testes em paralelo.'))
 
 
 if __name__ == '__main__':
