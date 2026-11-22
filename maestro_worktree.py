@@ -6,6 +6,7 @@ principal. Um conflito nunca se resolve sozinho: o merge é abortado e o ramo fi
 """
 from __future__ import annotations
 
+import fnmatch
 import os
 import pathlib
 import re
@@ -48,23 +49,40 @@ def overlaps(a, b):
 
 
 def inside(path, scope):
-    p = _norm(path)
-    return any(_norm(s) and (p == _norm(s) or p.startswith(_norm(s) + '/')) for s in scope)
+    """Padrões ao estilo .gitignore, a qualquer profundidade: `FragorHumanoid*` apanha
+    `Source/X/FragorHumanoid.cpp` e `Tests/Corpo` apanha `Source/X/Tests/Corpo/a.cpp`."""
+    parts = str(path).strip().lstrip('./').split('/')
+    for raw in scope:
+        pat = str(raw).strip().lstrip('./').rstrip('/').replace('**/', '').replace('/**', '')
+        if not pat:
+            continue
+        n = pat.count('/') + 1
+        for i in range(len(parts)):
+            if fnmatch.fnmatch('/'.join(parts[i:i + n]), pat):
+                return True
+    return False
 
 
 def open_worktree(repo, name):
-    """Cria o worktree; devolve dict(path, branch, base)."""
+    """Cria o worktree; devolve dict(path, branch, base, resumed).
+
+    Numa retoma o ramo da tentativa anterior continua: o trabalho já feito nunca se apaga."""
     name = re.sub(r'[^A-Za-z0-9_-]', '-', name)[:60]
     path, branch = ROOT / name, 'maestro/' + name
     with _lock(repo):
-        base = _git(repo, 'rev-parse', 'HEAD')
-        if path.exists():
-            _git(repo, 'worktree', 'remove', '--force', str(path))
+        head = _git(repo, 'rev-parse', 'HEAD')
         if _git(repo, 'branch', '--list', branch):
-            _git(repo, 'branch', '-D', branch)
+            if not (path / '.git').exists():
+                shutil.rmtree(path, ignore_errors=True)
+                _git(repo, 'worktree', 'prune')
+                _git(repo, 'worktree', 'add', str(path), branch)
+            return dict(path=str(path), branch=branch, base=_git(repo, 'merge-base', head, branch), resumed=True)
+        if path.exists():
+            subprocess.run(['git', '-C', str(repo), 'worktree', 'remove', '--force', str(path)], capture_output=True, env=ENV, timeout=60)
+            shutil.rmtree(path, ignore_errors=True)
         ROOT.mkdir(parents=True, exist_ok=True)
-        _git(repo, 'worktree', 'add', '-b', branch, str(path), base)
-    return dict(path=str(path), branch=branch, base=base)
+        _git(repo, 'worktree', 'add', '-b', branch, str(path), head)
+    return dict(path=str(path), branch=branch, base=head, resumed=False)
 
 
 def integrate(repo, wt, scope, title):
@@ -77,10 +95,9 @@ def integrate(repo, wt, scope, title):
     if not changed:
         close(repo, wt)
         return True, 'Sem alterações para integrar.'
+    # O âmbito serve para escolher quem corre em paralelo; quem decide se dá para juntar é o merge.
+    # Sair do âmbito só falha quando choca com outro escritor (conflito, mais abaixo).
     outside = [f for f in changed if not inside(f, scope)]
-    if outside:
-        return False, (f'Alterou ficheiros fora do âmbito {scope}: {outside[:10]}. '
-                       f'Nada foi integrado; o trabalho ficou no ramo {branch} ({path}).')
     with _lock(repo):
         try:
             _git(repo, 'merge', '--no-ff', '--no-edit', '-m', f'Maestro: integra {title[:100]}', branch)
@@ -89,7 +106,8 @@ def integrate(repo, wt, scope, title):
             return False, f'Conflito ao integrar ({exc}). O merge foi abortado; o trabalho ficou no ramo {branch} ({path}).'
         head = _git(repo, 'rev-parse', '--short', 'HEAD')
     close(repo, wt)
-    return True, f'Integrado em {repo} ({head}): ' + ', '.join(changed[:20])
+    extra = f' Fora do âmbito declarado, juntos sem conflito: {outside[:10]}.' if outside else ''
+    return True, f'Integrado em {repo} ({head}): ' + ', '.join(changed[:20]) + extra
 
 
 def close(repo, wt):

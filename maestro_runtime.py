@@ -184,7 +184,7 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
             raise ValueError('O pedido guardado é diferente; usa um novo identificador de turno.')
         # An explicit queue retry is the only path to an interrupted workflow.
         for node in workflow.snapshot()['nodes']:
-            if node['status'] in ('interrupted', 'failed'):
+            if node['status'] in ('interrupted', 'failed', 'cancelled'):
                 workflow.retry(node['id'])
         # The saved plan may name an engine that has since run out of quota.
         if allowed:
@@ -320,7 +320,8 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
         if context.get('previous_result'):
             task_prompt += ('\n\n[RESULTADO DA TUA EXECUÇÃO ANTERIOR]\n' +
                             str(context['previous_result'].get('text', ''))[-16000:] +
-                            '\nContinua a partir deste estado para responder às novas orientações. '
+                            '\nContinua a partir deste estado para responder às novas orientações. Se a tentativa falhou, '
+                            'analisa primeiro a causa (incluindo limites do próprio Maestro) e contorna-a em vez de repetir o mesmo caminho. '
                             'Verifica primeiro o estado atual e preserva as alterações já feitas; não repitas ações concluídas. '
                             'Devolve um resultado final autónomo que inclua as conclusões anteriores ainda válidas.')
         if not WF.isolated(node):
@@ -329,15 +330,16 @@ def run_turn(web, engine, full_prompt, user_text, cwd, images, plan, project, jo
         repo, scope = node['repo'], node['write_paths']
         wt = WT.open_worktree(repo, plan['turn_id'][:8] + '-' + node['id'])
         task_prompt += ('\n\n[ESCRITA EM PARALELO]\nTrabalhas no worktree git ' + wt['path'] + ' (ramo ' + wt['branch'] +
-                        ', a partir do HEAD de ' + repo + '), ao mesmo tempo que outros agentes. Altera APENAS: ' + ', '.join(scope) +
+                        ', a partir do HEAD de ' + repo + ')' + (' — RETOMA: o ramo já tem o trabalho da tentativa anterior; vê `git -C ' + wt['path'] + ' diff ' + wt['base'] + '` e continua daí' if wt.get('resumed') else '') +
+                        ', ao mesmo tempo que outros agentes. Altera de preferência só: ' + ', '.join(scope) +
                         '. Lê o resto do projeto à vontade. Não faças commit, push, PR, merge, nem passos em máquinas partilhadas '
                         '(ssh desktop, builds): o Maestro faz o commit e junta o ramo em ' + repo + ' quando acabares, e uma tarefa '
-                        'posterior publica. Se precisares de mexer noutros ficheiros, diz qual e porquê em vez de o fazer.\n')
+                        'posterior publica. Se for mesmo preciso mexer noutros ficheiros, podes: o Maestro junta-os quando não chocam com outro escritor; diz quais e porquê.\n')
         result = invoke(node['engine'], task_prompt, instruction, False, node['id'], model_id=node.get('model_id'),
                         effort=node.get('effort'), task_role=node.get('role'), work_dir=wt['path'])
         if result.get('failed') or result.get('ok') is False:
-            WT.close(repo, wt)
-            return result
+            # O ramo fica: a retoma continua a partir dele (open_worktree reaproveita-o).
+            return dict(result, text=str(result.get('text') or '') + f"\n\n[Integração do Maestro] O trabalho ficou no ramo {wt['branch']} ({wt['path']}); a retoma continua daí.")
         ok, note = WT.integrate(repo, wt, scope, node['title'])
         web._push_job_step(job, ('🔀 ' if ok else '⚠️ ') + node['title'] + ': ' + note[:200])
         result = dict(result, text=result['text'] + '\n\n[Integração do Maestro] ' + note)

@@ -98,14 +98,15 @@ class WorktreeTests(unittest.TestCase):
             self.assertFalse(pathlib.Path(wt['path']).exists())
             self.assertEqual(git(r.repo, 'branch', '--list', wt['branch']), '')
 
-    def test_out_of_scope_change_is_not_integrated(self):
+    def test_out_of_scope_change_without_conflict_is_integrated_with_note(self):
         with Repo() as r:
             wt = WT.open_worktree(r.repo, 't1-docs')
             pathlib.Path(wt['path'], 'src', 'x.cpp').write_text('mudei\n')
             ok, note = WT.integrate(r.repo, wt, ['docs'], 'Visão')
-            self.assertFalse(ok)
+            self.assertTrue(ok, note)
             self.assertIn('src/x.cpp', note)
-            self.assertEqual((r.repo / 'src' / 'x.cpp').read_text(), 'x\n')
+            self.assertIn('Fora do âmbito', note)
+            self.assertEqual((r.repo / 'src' / 'x.cpp').read_text(), 'mudei\n')
 
     def test_conflict_aborts_merge_and_keeps_branch(self):
         with Repo() as r:
