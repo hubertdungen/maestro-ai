@@ -1073,9 +1073,18 @@ def stop_chat_job(chat_id: str, reason: str = "Interrompido pelo utilizador") ->
         all_jobs = jobs + [child for parent in jobs for child in parent.get('children', [])]
         for child in all_jobs:
             child.update(status='stopped', stop_reason=reason)
+        if reason != 'steer':
+            # Um agente ainda vivo de um turno já marcado como terminado (corrida no fim do planeamento)
+            # ficava órfão e prendia a fila: parar o chat mata qualquer processo de agente que ainda corra.
+            with JOBS_LOCK:
+                stale = [j for job in ACTIVE_JOBS.values() if job.get('chat_id') == chat_id and job not in jobs
+                         for j in [job] + list(job.get('children', [])) if j.get('proc') and j['proc'].poll() is None]
+            for j in stale:
+                j.update(status='stopped', stop_reason=reason)
+            all_jobs += stale
         for j in all_jobs:
             proc = j.get('proc')
-            if proc:
+            if proc and proc.poll() is None:
                 try:
                     if os.getpgid(proc.pid) == proc.pid:
                         os.killpg(proc.pid, signal.SIGTERM)
