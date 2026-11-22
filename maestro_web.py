@@ -1844,9 +1844,11 @@ def start_async_chat_job(chat: dict, eng_key: str, full_prompt: str, user_text: 
                 notes = ((cur.get('failure_notes') or []) + [(cur.get('assigned_engine') or eng_key) + ': ' + ' '.join(str(res.get('text') or '').split())[-300:]])[-3:]
                 TURN_QUEUE.update(task_id, status='queued', reason='evaluating', auto_retries=n + 1, assigned_engine=None, failed_engines=tried, failure_notes=notes)
             else:
-                TURN_QUEUE.update(task_id, status="stopped" if was_stopped else ("interrupted" if failed else "done"), reason="interrupted" if failed else "done", gave_up=bool(failed and not was_stopped))
-                if failed and not was_stopped:
-                    give_up_notice(cid, task_id, f'falhou {n + 1} vezes (motores: ' + ', '.join((cur.get('failed_engines') or []) + [cur.get('assigned_engine') or eng_key]) + ')')
+                why = f'falhou {n + 1} vezes (motores: ' + ', '.join((cur.get('failed_engines') or []) + [cur.get('assigned_engine') or eng_key]) + ')'
+                if not (failed and not was_stopped and auto_heal(cid, task_id, why)):
+                    TURN_QUEUE.update(task_id, status="stopped" if was_stopped else ("interrupted" if failed else "done"), reason="interrupted" if failed else "done", gave_up=bool(failed and not was_stopped))
+                    if failed and not was_stopped:
+                        give_up_notice(cid, task_id, why)
         with JOBS_LOCK:
             if not was_stopped and job.get("status") == "running":
                 job["status"] = "failed" if failed else "done"
@@ -2235,8 +2237,10 @@ def schedule_turns_once():
             engine, reason = Q.decide(task, plan, running)
             if not engine:
                 if reason == 'exhausted':
-                    TURN_QUEUE.update(task['id'], status='interrupted', reason='interrupted', gave_up=True, error='sem motores alternativos')
-                    give_up_notice(cid, task['id'], 'já falhou em todos os motores disponíveis (' + ', '.join(task.get('failed_engines') or []) + ')')
+                    why = 'já falhou em todos os motores disponíveis (' + ', '.join(task.get('failed_engines') or []) + ')'
+                    if not auto_heal(cid, task['id'], why):
+                        TURN_QUEUE.update(task['id'], status='interrupted', reason='interrupted', gave_up=True, error='sem motores alternativos')
+                        give_up_notice(cid, task['id'], why)
                     continue
                 think('n', reason, task)
                 TURN_QUEUE.update(task['id'], reason=reason, checked_at=time.time(), **({'conflict': 'yellow'} if reason == 'engine_busy' else {}))
@@ -2277,12 +2281,34 @@ def schedule_turns_once():
             TURN_QUEUE.update(task['id'], status='interrupted', reason='interrupted', error=str(exc)[:500])
 
 
+AUTO_HEALS = int(os.environ.get('MAESTRO_AUTO_HEALS', '2'))
+
+
+def auto_heal(cid: str, task_id: str, why: str) -> bool:
+    """Antes de desistir, o Maestro retoma sozinho: o plano guardado repete só as tarefas que
+    falharam, cada uma com o resultado e o erro da tentativa anterior para analisar e contornar."""
+    cur = next((t for t in TURN_QUEUE.tasks if t['id'] == task_id), None) or {}
+    heals = int(cur.get('auto_heals') or 0)
+    if heals >= AUTO_HEALS:
+        return False
+    TURN_QUEUE.update(task_id, status='queued', reason='evaluating', gave_up=False, auto_retries=0, failed_engines=[],
+                      error=None, limits_sig=None, assigned_engine=None, auto_heals=heals + 1)
+    chat = load_chat(cid)
+    if chat:
+        chat.setdefault('messages', []).append({'role': 'assistant', 'turn_id': task_id, 'ts': time.time(), 'agent_used': 'Maestro',
+            'text': f'🔁 Autocorreção {heals + 1}/{AUTO_HEALS}: {why}. Retomo sozinho a partir do que ficou feito; '
+                    'as tarefas que falharam recebem o erro anterior para o analisar e contornar.'})
+        save_chat(chat)
+    return True
+
+
 def give_up_notice(cid: str, task_id: str, why: str) -> None:
     """Tell the user a request was abandoned, in the chat itself."""
     chat = load_chat(cid)
     if chat:
         chat.setdefault('messages', []).append({'role': 'assistant', 'turn_id': task_id, 'ts': time.time(), 'agent_used': 'Maestro',
-            'text': '⚠️ Desisti deste pedido: ' + why + '. Para não gastar mais tokens, parei por aqui. Reformula o pedido, escolhe um motor à mão ou carrega em retomar na fila.'})
+            'retry_task': task_id,
+            'text': '⚠️ Desisti deste pedido: ' + why + f' e depois de {AUTO_HEALS} autocorreções. Para não gastar mais tokens, parei por aqui. Carrega em «▶ Continuar trabalho» para outra ronda, ou reformula o pedido.'})
         save_chat(chat)
 
 
@@ -3142,8 +3168,9 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/chat/queue/retry":
             with TURN_QUEUE.lock:
                 task = next((t for t in TURN_QUEUE.tasks if t['id'] == body.get('task_id')), None)
-                if task and task['status'] == 'interrupted':
-                    TURN_QUEUE.update(task['id'], status='queued', reason='evaluating', gave_up=False, auto_retries=0, failed_engines=[], failure_notes=[], error=None, limits_sig=None)
+                # «Continuar trabalho»: também depois de parado à mão; nova ronda com as autocorreções a zero.
+                if task and task['status'] in ('interrupted', 'stopped'):
+                    TURN_QUEUE.update(task['id'], status='queued', reason='evaluating', gave_up=False, auto_retries=0, failed_engines=[], failure_notes=[], error=None, limits_sig=None, auto_heals=0)
             return self._reply(200, {"ok": True})
 
         if u.path == "/api/chat/send":

@@ -327,6 +327,10 @@ class Workflow:
             node = next((n for n in self.data['nodes'] if n['id'] == node_id), None)
             if not node or node['status'] not in ('failed', 'interrupted', 'cancelled', 'blocked'):
                 raise ValueError('Esta tarefa não está disponível para repetição.')
+            # A repetição vê o que a tentativa anterior fez e porque falhou (autocorreção).
+            if node.get('result') or node.get('error'):
+                node['last_attempt'] = {'text': (str((node.get('result') or {}).get('text') or '')[-12000:] +
+                                                 '\n\n[ERRO DA TENTATIVA ANTERIOR] ' + str(node.get('error') or '')[-2000:]).strip()}
             node.update(status='pending')
             for key in ('error', 'result', 'started_at', 'finished_at'):
                 node.pop(key, None)
@@ -431,7 +435,7 @@ class Workflow:
                             dep: copy.deepcopy(by_id[dep].get('result') or {}) for dep in node['depends_on']}}
                         for result in context['dependency_results'].values():
                             result['text'] = result.get('text', '')[-16000:]
-                        context['previous_result'] = copy.deepcopy(node.get('result') or {})
+                        context['previous_result'] = copy.deepcopy(node.get('result') or node.get('last_attempt') or {})
                         context['guidance'] = copy.deepcopy(node.get('guidance', []))
                         for message in node.get('guidance', []):
                             if message['status'] == 'queued':
