@@ -39,3 +39,25 @@ explícita, independentemente do timezone do cron):
 ```cron
 * * * * * /usr/bin/python3 /home/hubert/scripts/maestro/maestro_pulse_weekly.py >> /home/hubert/scripts/logs/pulse-weekly.log 2>&1
 ```
+
+## Resumo das correções no email
+
+O relatório do Pulso mantém-se ao domingo às 09:00, depois da revisão de sábado
+às 09:00. Inclui uma secção «Resolução automática do NAS», tanto no resumo
+semanal como no mensal que o substitui no último domingo. O resultado final,
+com diagnóstico, correções e validação, é guardado no estado da revisão antes
+da eliminação do chat. O bloco técnico `pulse-action` fica fora do email.
+
+Se a revisão ainda aguardar quota/fila ou conclusão, o relatório indica esse
+estado sem anunciar correções. Quando terminar depois de um relatório já enviado,
+o verificador envia o resultado por email. Uma ação indispensável do Hubert
+continua a gerar um aviso imediato, incluindo também o resumo da revisão.
+Falhas de SMTP preservam o chat e são repetidas no próximo minuto.
+
+Instalar/atualizar a integração no Pulso, depois de publicar os dois módulos:
+
+```sh
+python3 maestro_pulse_report.py --install /home/hubert/scripts/pulse/notify.py
+```
+
+A instalação é idempotente e não altera o horário nem as definições SMTP.
