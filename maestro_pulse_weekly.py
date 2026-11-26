@@ -85,7 +85,16 @@ EMAIL AO HUBERT: o verificador envia automaticamente um email apenas se for
 indispensável uma ação pessoal do Hubert para resolver um problema. Não envies
 tu o email. Não trates espera por quota/reset, pausa da fila, falha temporária
 ou um problema já resolvido como ação humana. Primeiro esgota as alternativas
-seguras autorizadas. No fim da resposta inclui exatamente um bloco
+seguras autorizadas, com bom senso e esforço proporcional: confirma a causa e
+se o bloqueio ainda existe, consulta logs/endpoints, configuração e credenciais
+locais e tenta as correções reversíveis ao teu alcance. Falta de acesso num
+conector não prova falta de acesso por outras vias autorizadas. Não peças ao
+Hubert verificações ou comandos que tu próprio podes executar, nem escolhas
+técnicas rotineiras. Respeita as autorizações já dadas. Só pede intervenção se
+existir uma dependência concreta que apenas ele possa resolver; no campo reason
+resume as verificações/tentativas e explica por que a intervenção é indispensável.
+Não insistas em tentativas repetidas sem nova evidência nem contornes controlos
+de segurança. No fim da resposta inclui exatamente um bloco
 ```pulse-action
 {"actions": []}
 ```
