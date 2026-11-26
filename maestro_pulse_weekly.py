@@ -9,8 +9,12 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta
 import fcntl
+import html
+import importlib.util
 import json
 from pathlib import Path
+import re
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -77,6 +81,20 @@ prova de validação, distinguindo corrigido, já normalizado e bloqueado.
 Este chat temporário é eliminado automaticamente ao fim de 48 horas.
 Se não houver incidentes, confirma a saúde atual sem inventar trabalho.
 
+EMAIL AO HUBERT: o verificador envia automaticamente um email apenas se for
+indispensável uma ação pessoal do Hubert para resolver um problema. Não envies
+tu o email. Não trates espera por quota/reset, pausa da fila, falha temporária
+ou um problema já resolvido como ação humana. Primeiro esgota as alternativas
+seguras autorizadas. No fim da resposta inclui exatamente um bloco
+```pulse-action
+{"actions": []}
+```
+Se precisares mesmo do Hubert, preenche actions com objetos com três campos
+de texto não vazios: problem (problema), reason (porque não o consegues resolver
+autonomamente) e action (passos concretos ou decisão necessária do Hubert).
+Não incluas segredos. Este bloco é obrigatório mesmo sem ações; o envio usa
+o destinatário já configurado no Pulso, sem mensagens a outras pessoas.
+
 INCIDENTES (JSON):
 ''' + json.dumps(items, ensure_ascii=False, indent=2) + '\nFALHAS DE RECOLHA:\n' + json.dumps(errors, ensure_ascii=False)
 
@@ -109,10 +127,56 @@ class Runner:
                     history.append(json.loads(line))
         return candidates(feed, opened, history, now), feed.get('errors', [])
 
+    def send_action_email(self, subject, body):
+        # Reuse Pulso's configured recipient and SMTP transport, without copying secrets.
+        sys.path.insert(0, str(self.pulse))
+        try:
+            spec = importlib.util.spec_from_file_location('pulse_weekly_notify', self.pulse / 'notify.py')
+            notify = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(notify)
+            if not notify.settings()['enabled']:
+                raise RuntimeError('Emails do Pulso desativados; aviso de ação fica por enviar')
+            notify.send(subject, '<pre style="white-space:pre-wrap">' + html.escape(body) + '</pre>', body)
+        finally:
+            sys.path.pop(0)
+
+    def notify_action(self, key, run, now):
+        if not run.get('submitted_at') or run.get('action_checked_at'):
+            return True
+        snapshot = self.api('/api/chat/job?id=' + run['chat_id'])
+        if snapshot.get('running') or snapshot.get('queue'):
+            return False
+        messages = (snapshot.get('chat') or {}).get('messages', [])
+        if not messages or messages[-1].get('role') != 'assistant':
+            return False
+        blocks = re.findall(r'```pulse-action\s*\n(.*?)\n```', messages[-1].get('text', ''), re.S)
+        if len(blocks) != 1:
+            raise RuntimeError('Revisão sem relatório estruturado de ação; chat preservado')
+        report = json.loads(blocks[0])
+        actions = report.get('actions')
+        if not isinstance(actions, list) or any(not isinstance(a, dict) or any(
+                not isinstance(a.get(k), str) or not a[k].strip()
+                for k in ('problem', 'reason', 'action')) for a in actions):
+            raise RuntimeError('Relatório de ação inválido; chat preservado')
+        if actions:
+            body = f'Pulso · revisão semanal de {key}\nPreciso da tua ação para resolver:\n\n'
+            body += '\n\n'.join(f'{i}. Problema: {a["problem"]}\nMotivo: {a["reason"]}\nAção necessária: {a["action"]}'
+                                  for i, a in enumerate(actions, 1))
+            body += '\n\nO chat temporário no Maestro é eliminado após 48 horas; os passos necessários estão neste email.'
+            self.send_action_email('Pulso · ação tua necessária · ' + key, body)
+            run['action_email_sent_at'] = now
+        run['action_checked_at'] = now
+        return True
+
     def tick(self, now):
         state = read(self.path)
         # Expire before checking enabled: disabling repairs must not disable retention.
-        for run in state['runs'].values():
+        for key, run in state['runs'].items():
+            if run.get('chat_id') and not run.get('deleted_at'):
+                checked = self.notify_action(key, run, now)
+                save(self.path, state)
+                if not checked:
+                    continue
             if not run.get('chat_id') or run.get('deleted_at') or now < run['expires_at']:
                 continue
             cid = run['chat_id']
