@@ -81,8 +81,11 @@ prova de validação, distinguindo corrigido, já normalizado e bloqueado.
 Este chat temporário é eliminado automaticamente ao fim de 48 horas.
 Se não houver incidentes, confirma a saúde atual sem inventar trabalho.
 
-EMAIL AO HUBERT: o verificador envia automaticamente um email apenas se for
-indispensável uma ação pessoal do Hubert para resolver um problema. Não envies
+RELATÓRIO POR EMAIL: o resumo semanal do Pulso inclui o resultado desta revisão,
+mesmo sem problemas. Explica de forma concisa o que foi diagnosticado, corrigido,
+já estava normalizado e como validaste; distingue bloqueios e trabalho por fazer.
+O verificador envia também um aviso imediato apenas se for indispensável uma
+ação pessoal do Hubert para resolver um problema. Não envies
 tu o email. Não trates espera por quota/reset, pausa da fila, falha temporária
 ou um problema já resolvido como ação humana. Primeiro esgota as alternativas
 seguras autorizadas, com bom senso e esforço proporcional: confirma a causa e
@@ -167,13 +170,26 @@ class Runner:
                 not isinstance(a.get(k), str) or not a[k].strip()
                 for k in ('problem', 'reason', 'action')) for a in actions):
             raise RuntimeError('Relatório de ação inválido; chat preservado')
+        summary = re.sub(r'```pulse-action\s*\n.*?\n```', '', messages[-1].get('text', ''), flags=re.S).strip()
+        if not summary:
+            raise RuntimeError('Revisão sem resumo; chat preservado')
+        run['summary'] = summary
+        run['completed_at'] = now
         if actions:
             body = f'Pulso · revisão semanal de {key}\nPreciso da tua ação para resolver:\n\n'
             body += '\n\n'.join(f'{i}. Problema: {a["problem"]}\nMotivo: {a["reason"]}\nAção necessária: {a["action"]}'
                                   for i, a in enumerate(actions, 1))
+            body += '\n\nResumo da revisão:\n' + summary
             body += '\n\nO chat temporário no Maestro é eliminado após 48 horas; os passos necessários estão neste email.'
             self.send_action_email('Pulso · ação tua necessária · ' + key, body)
             run['action_email_sent_at'] = now
+        # A digest may have gone out while this review was still queued/running.
+        digest_path = self.pulse / 'digest-state.json'
+        digest = read(digest_path) if digest_path.exists() else {}
+        if not actions and digest.get('last_digest', {}).get('at', 0) >= run['submitted_at']:
+            self.send_action_email('Pulso · revisão concluída · ' + key,
+                f'Resultado da revisão semanal de {key}\n\n' + summary)
+            run['completion_email_sent_at'] = now
         run['action_checked_at'] = now
         return True
 
